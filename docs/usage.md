@@ -484,10 +484,10 @@ Task text keeps its internal whitespace and newlines, including later `--` token
 
 A live run starts the children and goes on: its model keeps taking turns while they work.
 When a child ends, the model reads a notice with the summary the child finished with (`summary: ...`), so a child sent to find something out answers its parent without a commit.
-A task completes at the run's next turn boundary once its children have ended; a task still running holds no other.
+Each dispatch returns at the next turn boundary after its children end.
 The judges start when the last attempt ends and run in the background while the run takes its turns.
 The model's roster shows the attempts as `being ranked`.
-The task completes at the boundary after the judges end.
+A ranked dispatch returns at the boundary after its judges end.
 While a child's own reviewers are working, the child is `in review` and still holds the parent's finish.
 Under agent6-owned git, tasks that finish before the same boundary merge in the order written, so when two touch the same lines the later one to merge gets the conflict.
 Before an automatic merge, the run's uncommitted work is committed first.
@@ -498,7 +498,8 @@ Missing measurements read as unknown.
 If the repository has neither a child's branch nor its chain, `agent6 sessions diff <child>` prints the available checkpoint patches in journal order.
 These are recorded previews, not a cumulative diff. The command marks truncated previews and says when no patch was recorded.
 `--stat` and `--path` need a local child ref.
-Among attempts a stopped child is no candidate; a task whose every child stopped merges nothing, says `Every child stopped: nothing merged.` and is marked failed.
+Stopped children are ineligible for ranking.
+If every attempt stopped, the notice says `Every child stopped: nothing merged.`
 Under agent6-owned git, `agent6 sessions merge <child> --into <branch>` merges a stopped child's branch by hand.
 
 ### The parallel tool
@@ -508,11 +509,16 @@ With `harness.parallel.tool = true` ([parallel](config.md#harnessparallel)), a r
 With `{"task_id":"0002"}`, the child gets task `0002`'s title, rationale and acceptance.
 The child holds that task until its result returns.
 The parent's cursor moves to the next ready task or clears if none is ready.
-The task passes or fails with the child's result. A refused launch leaves the task available.
+The child's return leaves the task open.
+Its note records how the child ended and what happened to its work.
+The return notice names the task ID for the parent to mark `passed` or `failed` with `update_task` after reading the report.
+The queue line counts running children, queued tasks waiting to start and tasks awaiting a mark.
+The end receipt names any task still awaiting a mark.
+A refused launch leaves the task available.
 A pending text dispatch under the task must return before the parent can hand off that task.
 A requested merge holds its task until the merge result is recorded.
-Merging a continuation's retained result records the merge commit on the task it passed.
-Merging another attempt leaves that passed task alone.
+A merge records its commit on the attached open task.
+Reopen a failed task before continuing its child or requesting an attached merge.
 Continuing a child after its task has passed or been retired leaves that task alone.
 One call is one task.
 The call starts its children in fresh clones of the committed tree, under the run's shared remaining budget, and returns at once with each child's session id.
@@ -560,7 +566,7 @@ It is refused for an id that is no child of the run, or one that has not started
 `stop_background` with a child's id stops the child; its work does not merge, and its branch holds what it committed.
 The roster and resumed parent state show the same stopped-child facts as its end notice, with the age updated.
 The two tools' descriptions mention children when the run can start a child or already has one.
-`finish_session` is refused while a child runs or its task awaits completion at a turn boundary, and the refusal names the children that hold it.
+`finish_session` is refused while a child runs or its dispatch awaits a result at a turn boundary, and the refusal names the children that hold it.
 A stopped child holds no end unless its parent requests a merge or continues it.
 `merge_child(id)` requests the merge of a stopped or continued child's commits at the next turn boundary and holds the end until its outcome is reported.
 It is offered only while the run has stopped or continued work awaiting a merge and `git.control = "agent6"`, including children started by `/parallel` when the parallel tool is off.
@@ -582,7 +588,8 @@ A question nobody answers on that run (`away mode deny`) returns `unanswered` to
 Children end with the execution that started them: when the run stops, or ends any other way, its running children are stopped and their spend is charged.
 Before its first call a resumed parent sees the ended children it can continue.
 Agent6 retains their work; a continued child only merges at its parent's request.
-A task whose children had ended by themselves when the run ended completes then under the same merge policy as a turn boundary; each child's spend is settled once.
+A dispatch with work still to merge at the end returns when the parent resumes.
+Each child's spend is settled once.
 `sessions list --children`, `sessions show` and the receipt list attempts and reviewers by dispatch group and number.
 The receipt's `Children` section names the settled spend already included in the run's total.
 The end summary splits this execution's fresh input and output tokens between the parent and its settled children, including ranking reviewers.

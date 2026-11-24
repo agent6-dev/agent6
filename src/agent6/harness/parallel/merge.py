@@ -32,8 +32,7 @@ def merge_child_result(
     """Merge one returned child's branch onto the parent's chain.
 
     `chain_merge` leaves HEAD and the operator's checkout alone; the worktree gains the child's
-    files. Never raises; the DAG stamp is the segment's (`segment_stamp`). Stopped work
-    reaches this helper only through an explicit `merge_child` request.
+    files. Stopped work reaches this helper only through an explicit `merge_child` request.
 
     Args:
         root: The repository root.
@@ -120,27 +119,6 @@ def stopped_words(
     return f"{stopped_by}, not merged; {held}; conversation at last call: {size}; {age}"
 
 
-def segment_stamp(
-    children: Sequence[child_records.ChildMerge],
-) -> tuple[graph_models.NodeStatus, str, str]:
-    """Reduce one segment's child merges to its DAG stamp.
-
-    A finished result can merge, have no changes, or retain its ref under model-owned git.
-    Only a merge records a commit on the parent task.
-
-    Args:
-        children: The segment's merges.
-
-    Returns:
-        The status, the note and the sha ("" when failed).
-    """
-    merged = [j for j in children if j.status == "merged"]
-    note = "; ".join(child_note(j) for j in children)
-    if merged or any(j.status in ("no_changes", "retained") for j in children):
-        return "passed", note, merged[-1].sha if merged else ""
-    return "failed", note, ""
-
-
 def merge_words(j: child_records.ChildMerge) -> str:
     """Return how a child's work merged, as the background roster states it."""
     if j.status == "merged":
@@ -159,17 +137,17 @@ def merge_words(j: child_records.ChildMerge) -> str:
 
 def child_note(j: child_records.ChildMerge) -> str:
     """Return one child's outcome as a DAG note line."""
-    if j.status in ("merged", "retained"):
-        return f"{j.session_id} {merge_words(j)}"
+    if j.status in ("merged", "retained", "ranked"):
+        return f"{j.session_id} finished; {merge_words(j)}"
     if j.status == "no_changes":
-        return f"{j.session_id} made no changes"
+        return f"{j.session_id} finished with no changes"
     if j.status == "conflict":
-        return f"{j.session_id} conflicted; merge manually"
-    if j.status == "ranked":
-        return f"{j.session_id} ranked {j.detail}; not merged"
+        return f"{j.session_id} finished; {j.detail or 'merge conflict'}; {j.branch} holds its work"
     if j.status == "stopped":
-        return f"{j.session_id} {j.detail}; not merged"
-    return f"{j.session_id} failed: {j.detail}"
+        held = f"{j.branch} holds {j.commits} commit(s)" if j.branch else "ref unknown"
+        return f"{j.session_id} {j.detail}; not merged; {held}"
+    work = f"{j.branch} not merged" if j.branch else "no work imported"
+    return f"{j.session_id} ended; {work}: {j.detail}"
 
 
 def started_text(children: Sequence[str]) -> str:
@@ -184,11 +162,11 @@ def started_text(children: Sequence[str]) -> str:
     if len(children) == 1:
         return (
             f"[parallel] started child {children[0]}. A notice arrives when it ends and when"
-            " its task completes; read_background reads it and stop_background stops it, by id."
+            " its dispatch completes; read_background reads it and stop_background stops it, by id."
         )
     return (
         f"[parallel] started {len(children)} attempts at one task: {', '.join(children)}."
-        " A notice arrives as each ends and when the task completes after ranking in the"
+        " A notice arrives as each ends and when the dispatch completes after ranking in the"
         " background. read_background reads one and stop_background stops one, by id."
     )
 
@@ -238,6 +216,8 @@ def summary_text(
     group: str,
     children: list[child_records.ChildMerge],
     ranking: child_dispatch.RankRecord | None = None,
+    *,
+    task_id: str | None = None,
 ) -> str:
     """Return the one notice that says how each child of a completed dispatch merged.
 
@@ -245,6 +225,7 @@ def summary_text(
         group: The dispatch's group id.
         children: Each child's merge, in dispatch order.
         ranking: How its attempts were ranked; None for a task with one child and for a panel.
+        task_id: The attached task awaiting the parent's mark, if any.
 
     Returns:
         One line per child, how the attempts were ranked, then what to do; a dispatch
@@ -291,7 +272,8 @@ def summary_text(
             if any(j.status == "retained" for j in children)
             else "Nothing merged."
         )
-    return "\n".join(lines)
+    waiting = f"\nTask {task_id} awaits your mark." if task_id else ""
+    return "\n".join(lines) + waiting
 
 
 def rank_summary(children: Sequence[child_records.ChildMerge]) -> str:
@@ -405,48 +387,27 @@ def add_parallel_node(
         return None
 
 
-def stamp_parallel_node(
+def record_outcomes(
     curator: graph_curator.GraphCurator | None,
     node_id: str | None,
+    children: Sequence[child_records.ChildMerge],
     *,
-    status: graph_models.NodeStatus,
-    note: str,
-    sha: str = "",
     log: Callable[[str], None],
 ) -> None:
-    """Record a dispatched node's merge sha, when given, then its final status.
-
-    A curator fault is logged, never raised.
+    """Record the attached children's work without marking their task.
 
     Args:
         curator: The graph, or None.
-        node_id: The node, or None.
-        status: The final status.
-        note: The status note.
-        sha: The merge sha, or "".
+        node_id: The attached task, or None.
+        children: Its returned attempts in dispatch order.
         log: The run's text logger.
     """
-    if curator is None or node_id is None:
+    if curator is None or node_id is None or not children:
         return
     try:
-        if sha:
-            curator.record_commit(graph_models.RecordCommitIntent(id=node_id, sha=sha))
-        if status == "passed" and curator.get(node_id).status == "passed":
-            return
-        curator.update_status(
-            graph_models.UpdateStatusIntent(id=node_id, new_status=status, note=note)
-        )
+        for child in children:
+            if child.status == "merged" and child.sha != curator.get(node_id).commit_sha:
+                curator.record_commit(graph_models.RecordCommitIntent(id=node_id, sha=child.sha))
+        curator.append_note(node_id, "; ".join(child_note(child) for child in children))
     except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
-        log(f"PARALLEL: DAG node stamp failed for {node_id}: {exc}")
-
-
-def stamp_segment_node(
-    curator: graph_curator.GraphCurator | None,
-    node_id: str | None,
-    children: list[child_records.ChildMerge],
-    *,
-    log: Callable[[str], None],
-) -> None:
-    """Stamp one segment's DAG node from its children's merges (`segment_stamp`)."""
-    status, note, sha = segment_stamp(children)
-    stamp_parallel_node(curator, node_id, status=status, note=note, sha=sha, log=log)
+        log(f"PARALLEL: could not record child work on task {node_id}: {exc}")

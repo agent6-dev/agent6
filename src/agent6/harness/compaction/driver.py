@@ -146,7 +146,15 @@ class _Scheduled:
         else:
             replay = retention.select(messages, context.settings, context.task.text, context.pins)
         open_tasks = (
-            advice.open_subtasks(context.curator.nodes()) if context.curator is not None else []
+            advice.open_subtasks(
+                {
+                    nid: node
+                    for nid, node in context.curator.nodes().items()
+                    if not node.awaiting_mark and not node.held_by
+                }
+            )
+            if context.curator is not None
+            else []
         )
         written = write_summary(
             context,

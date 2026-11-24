@@ -20,7 +20,7 @@ import sys
 from collections.abc import Generator
 
 from agent6 import paths, portable
-from agent6.graph import models
+from agent6.graph import models, order
 from agent6.sessions import child_dispatch
 from agent6.sessions import layout as sessions_layout
 
@@ -341,7 +341,7 @@ def _prune_stale_node_files(
 def with_holds(
     nodes: dict[str, models.TaskNode], layout: sessions_layout.SessionLayout
 ) -> dict[str, models.TaskNode]:
-    """Return the graph with the child ids that hold each dispatched task.
+    """Return the graph with its child holds and tasks awaiting a parent mark.
 
     Args:
         nodes: The persisted nodes by id.
@@ -351,9 +351,23 @@ def with_holds(
         The read model. A fork has its own dispatch records.
     """
     view = nodes.copy()
+    returned: set[str] = set()
     for record in child_dispatch.read_records(layout.session_dir):
-        if (nid := record.node_id) and nid in view and (holders := record.holders):
+        if not (nid := record.node_id) or nid not in view:
+            continue
+        if holders := record.holders:
             view[nid] = nodes[nid].model_copy(update={"held_by": holders})
+        if record.state == "complete" and any(c.merge and not c.detached for c in record.children):
+            returned.add(nid)
+    for nid in returned:
+        node = view[nid]
+        if (
+            node.parent_id
+            and not node.standing
+            and not node.held_by
+            and node.status in order.OPEN_STATUSES
+        ):
+            view[nid] = node.model_copy(update={"awaiting_mark": True})
     return view
 
 

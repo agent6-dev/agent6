@@ -169,7 +169,7 @@ class ParallelConfig(pydantic.BaseModel):
         description=(
             "offer a run's model the `parallel` tool, which starts one task in isolated "
             "children (fresh clones of the committed tree, each an ordinary run that may edit) "
-            "and completes their tasks at turn boundaries (`git.control` decides who merges), "
+            "and returns their results at turn boundaries (`git.control` decides who merges), "
             "and `steer_child`, which instructs a running child or continues a stopped one; "
             "a child runs under the run's "
             "own config and its remaining budget, which the children share; "

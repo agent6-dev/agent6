@@ -650,6 +650,9 @@ extra_read_paths = ["/srv/inbox"]
 
 ## Execution semantics
 
+A workflow routes on its recorded step outcome.
+Within a run, [a task dispatched to a child](usage.md#the-parallel-tool) stays open for the parent to mark from the report.
+
 ### The engine as a pure reducer
 
 ```

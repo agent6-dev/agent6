@@ -147,7 +147,7 @@ class Harness:
             worker's: its own system prompt and opening, a call ceiling told on every turn,
             no gates, no advisors; None for the worker's execution.
         opening: The dispatch a fresh run makes in place of its first model call, merged by
-            rank: `run --parallel`'s spec and task. The run ends after the task completes.
+            rank: `run --parallel`'s spec and task. The run ends after the dispatch completes.
             None for a run that opens with the model.
         turns_reached: The turn being driven, 0 before the loop starts; the app's
             interrupt fallbacks read it for a truthful `session.stop`.
@@ -870,17 +870,21 @@ class Harness:
             conversation.notice(line)
         if self.mode == "run":
             running = self.children.running() if self.children is not None else 0
-            queued = (
-                sum(
-                    node.status == "pending" and models.queued_by_operator(node)
-                    for node in self.curator.nodes().values()
-                )
-                if self.curator is not None
-                else 0
+            nodes = self.curator.nodes().values() if self.curator is not None else ()
+            awaiting = sum(node.awaiting_mark for node in nodes)
+            queued = sum(
+                node.status == "pending"
+                and not node.held_by
+                and not node.awaiting_mark
+                and models.queued_by_operator(node)
+                for node in nodes
             )
             previous = conversation.latest_notice(nudges.QUEUE_LINE_PREFIX)
-            queue = f"{nudges.QUEUE_LINE_PREFIX}running children={running}; queued tasks={queued}"
-            if (running or queued or previous) and queue != previous:
+            queue = (
+                f"{nudges.QUEUE_LINE_PREFIX}running children={running}; queued tasks={queued}"
+                f"; awaiting mark={awaiting}"
+            )
+            if (running or queued or awaiting or previous) and queue != previous:
                 conversation.notice(queue)
 
     def _turn_before_call(
@@ -1652,7 +1656,8 @@ class Harness:
                 state,
                 loop_snapshot.End(
                     reason,
-                    advice.with_open_tasks(finish.summary, self.open_subtasks()),
+                    finish.summary,
+                    list_open_tasks=True,
                     completed=True,
                     verdict="grounded" if finish.kind == "finish_session" else "passed",
                     checkpoint=False,
@@ -1712,9 +1717,11 @@ class Harness:
             self.log(f"LOOP: {len(ended)} child(ren) ended with pending tasks: {', '.join(ended)}")
             end = dataclasses.replace(
                 end,
-                summary=f"{end.summary}; {len(ended)} child(ren) ended, their tasks complete"
+                summary=f"{end.summary}; {len(ended)} child(ren) ended, their dispatches complete"
                 " when the run resumes",
             )
+        open_tasks = self.open_subtasks(awaiting_mark_only=not end.list_open_tasks)
+        end = dataclasses.replace(end, summary=advice.with_open_tasks(end.summary, open_tasks))
         if end.checkpoint:
             self.checkpoints.final(turn=turn, task_id=state.focus.surfaced_task_id)
         # An end the loop declares is no death: the next resume re-enters at the snapshot.
@@ -1931,23 +1938,31 @@ class Harness:
                 "created_by": n.created_by,
                 "standing": n.standing,
                 **({"held_by": list(n.held_by)} if n.held_by else {}),
+                **({"notes": n.notes} if n.notes else {}),
+                **({"awaiting_mark": True} if n.awaiting_mark else {}),
             }
             for nid, n in graph.items()
         }
         self.emit(journal.GraphUpdate(nodes=nodes, cursor=cursor))
 
-    def open_subtasks(self) -> list[tuple[str, str]]:
+    def open_subtasks(self, *, awaiting_mark_only: bool = False) -> list[tuple[str, str]]:
         """List the worker's open subtasks as (id, title) pairs, in run mode.
 
         The root stays open until the end, so counting it would deadlock every gate; a
         plan's tasks are its deliverable, open by design.
+
+        Args:
+            awaiting_mark_only: Include only tasks whose children returned for a verdict.
 
         Returns:
             The open subtasks; empty without a curator or outside run mode.
         """
         if self.curator is None or self.mode != "run":
             return []
-        return advice.open_subtasks(self.curator.nodes())
+        nodes = self.curator.nodes()
+        if awaiting_mark_only:
+            nodes = {nid: node for nid, node in nodes.items() if node.awaiting_mark}
+        return advice.open_subtasks(nodes)
 
     def checkpoint_graph_version(self) -> int:
         """Return the graph version for the per-turn checkpoint, 0 without a curator."""

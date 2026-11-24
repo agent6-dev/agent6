@@ -136,39 +136,6 @@ def _merge(status: Any, session_id: str = "child-1", sha: str = "") -> child_rec
     )
 
 
-def test_segment_stamp_reduces_children() -> None:
-    # A merge passes its task with the recorded sha.
-    assert parallel_merge.segment_stamp([_merge("merged", sha="abc123def4567")]) == (
-        "passed",
-        "child-1 merged into parent chain at abc123def456",
-        "abc123def4567",
-    )
-    status, note, sha = parallel_merge.segment_stamp([_merge("failed")])
-    assert (status, sha) == ("failed", "")
-    assert "child-1 failed: boom" in note
-    # Any merge passes the task with the last merge sha. The note names every child.
-    status, note, sha = parallel_merge.segment_stamp(
-        [_merge("merged", "a", sha="1111111111111"), _merge("merged", "b", sha="2222222222222")]
-    )
-    assert (status, sha) == ("passed", "2222222222222")
-    assert "a merged into parent chain at" in note and "b merged into parent chain at" in note
-    status, note, _sha = parallel_merge.segment_stamp([_merge("conflict"), _merge("conflict", "b")])
-    assert status == "failed"
-    assert "conflicted; merge manually" in note
-    # A segment whose children all ended with no changes passed: there was nothing to merge.
-    assert parallel_merge.segment_stamp([_merge("no_changes")]) == (
-        "passed",
-        "child-1 made no changes",
-        "",
-    )
-    # Mixed: the sha is the last merged child's; a no-change child adds none.
-    status, note, sha = parallel_merge.segment_stamp(
-        [_merge("merged", "a", sha="1111111111111"), _merge("no_changes", "b")]
-    )
-    assert (status, sha) == ("passed", "1111111111111")
-    assert "b made no changes" in note
-
-
 def test_summary_text_names_every_outcome() -> None:
     text = parallel_merge.summary_text(
         "p1",
@@ -202,11 +169,17 @@ def test_retained_notice_names_the_ref_without_claiming_a_merge() -> None:
 def test_child_note_wordings() -> None:
     assert (
         parallel_merge.child_note(_merge("merged", sha="abc123def4567"))
-        == "child-1 merged into parent chain at abc123def456"
+        == "child-1 finished; merged into parent chain at abc123def456"
     )
-    assert parallel_merge.child_note(_merge("conflict")) == "child-1 conflicted; merge manually"
-    assert parallel_merge.child_note(_merge("failed")) == "child-1 failed: boom"
-    assert parallel_merge.child_note(_merge("no_changes")) == "child-1 made no changes"
+    assert (
+        parallel_merge.child_note(_merge("conflict"))
+        == "child-1 finished; merge conflict; agent6/child-1 holds its work"
+    )
+    assert (
+        parallel_merge.child_note(_merge("failed"))
+        == "child-1 ended; agent6/child-1 not merged: boom"
+    )
+    assert parallel_merge.child_note(_merge("no_changes")) == "child-1 finished with no changes"
 
 
 def test_segment_children_carry_the_operator_pins_out_of_band() -> None:
@@ -300,14 +273,7 @@ def test_summary_text_says_a_stopped_child_did_not_merge() -> None:
         " conversation at last call: unknown; last ran: unknown.",
         "Every child stopped: nothing merged.",
     ]
-    # A task whose every child stopped did not pass; one that merged a sibling did.
-    assert parallel_merge.segment_stamp([idle, busy]) == (
-        "failed",
-        "a stopped at the run's budget; not merged; b stopped by its parent; not merged",
-        "",
-    )
     merged = _merge("merged", "c", sha="abc123def4567")
-    assert parallel_merge.segment_stamp([busy, merged])[0] == "passed"
     assert parallel_merge.summary_text("p1", [busy, merged]).splitlines()[-1] == (
         "Review what merged and continue."
     )

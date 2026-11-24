@@ -437,9 +437,8 @@ def test_the_settled_end_says_why_it_is_not_a_pass() -> None:
     red.verify.note_fail("sig")
     end = guards.settled_end(red, ctx)
     assert end.reason == "settled" and end.roots is True and end.verdict == "failed"
-    assert end.summary == (
-        "the worker settled, but the verify gate is still red (1 open task(s): audit)"
-    )
+    assert end.summary == "the worker settled, but the verify gate is still red"
+    assert end.list_open_tasks
     edited = _green_state()
     edited.verify.note_edit()
     assert "never re-verified" in guards.settled_end(edited, ctx).summary

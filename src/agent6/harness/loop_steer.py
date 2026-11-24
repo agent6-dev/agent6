@@ -206,12 +206,10 @@ def ranked_opening(
     if missing:
         summaries.insert(0, started.message)
     summary = "\n".join(summaries) or started.message
-    # A task needs one successful attempt of its own. Model-owned git keeps the ranked ref.
+    # This is the run's exit condition. Each group must have returned a result.
     statuses = [{merge.status for merge in group} for group in groups]
     failed = [
-        status
-        for status, group in zip(statuses, groups, strict=True)
-        if parallel_merge.segment_stamp(group)[0] != "passed"
+        status for status in statuses if status.isdisjoint({"merged", "no_changes", "retained"})
     ]
     if missing or failed:
         spent = harness.budget is not None and harness.budget.is_exhausted()

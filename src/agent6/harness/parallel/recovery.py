@@ -291,7 +291,6 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
                 f"[parallel] group {record.identity}: dispatch interrupted before launch;"
                 " nothing ran."
             )
-            record = dispatcher.fail_nodes(record, "dispatch interrupted before launch")
             record = dispatcher.charged(record, {}, unstarted=unstarted)
             dispatcher.emit_budget(record.turn)
             dispatcher.record_return(record, message)

@@ -64,7 +64,7 @@ def request(dispatcher: parallel_dispatch.ParallelDispatcher, child_id: str) -> 
             if dispatcher.chain.dirty() and not dispatcher.chain.per_turn:
                 raise tool_errors.ToolError("commit the working tree before requesting a merge")
             if not pending(child):
-                target = child_tasks.followup(dispatcher, record, child, merging=True)
+                target = child_tasks.followup(dispatcher, record, child)
                 dispatcher.write(
                     record.with_child(
                         target.model_copy(update={"merge_request": child_dispatch.MergeRequest()})
@@ -121,13 +121,11 @@ def settle(
                     child = child.model_copy(update={"merge": outcome})
                 record = record.with_child(child)
                 dispatcher.write(record)
-            if not child.detached:
-                parallel_merge.stamp_segment_node(
-                    dispatcher.curator,
-                    record.node_id,
-                    [parallel_merge.merge_of(child)],
-                    log=dispatcher.log,
-                )
+            result = parallel_merge.merge_of(child.model_copy(update={"merge": outcome}))
+            task_id = None if child.detached else record.node_id
+            parallel_merge.record_outcomes(
+                dispatcher.curator, task_id, [result], log=dispatcher.log
+            )
             dispatcher.emit_graph_snapshot()
             dispatcher.emit(
                 journal.ParallelChildMerged(
@@ -139,8 +137,9 @@ def settle(
                     detail=outcome.detail,
                 )
             )
-            result = parallel_merge.merge_of(child.model_copy(update={"merge": outcome}))
-            conversation.notice(parallel_merge.summary_text(record.identity, [result]))
+            conversation.notice(
+                parallel_merge.summary_text(record.identity, [result], task_id=task_id)
+            )
             record = record.with_child(
                 child.model_copy(
                     update={"merge_request": asked.model_copy(update={"delivered": True})}

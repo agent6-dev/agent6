@@ -390,8 +390,18 @@ def task_tree_views(
             parent_id=parent_id if isinstance(parent_id, str) else None,
             standing=standing,
         )
-        if holders:
-            note = "; ".join(filter(None, (note, f"held by {', '.join(holders)}")))
+        notes = node.get("notes")
+        note = "; ".join(
+            filter(
+                None,
+                (
+                    note,
+                    f"held by {', '.join(holders)}" if holders else "",
+                    "awaiting parent mark" if node.get("awaiting_mark") else "",
+                    terminal.scrub_terminal_controls(notes) if isinstance(notes, str) else "",
+                ),
+            )
+        )
         out.append(
             state_types.TaskNodeView(
                 id=nid,

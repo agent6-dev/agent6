@@ -340,7 +340,8 @@ def metric_plateau(
     def end() -> loop_snapshot.End:
         return loop_snapshot.End(
             "metric_plateau",
-            advice.with_open_tasks(finish, ctx.open_subtasks()),
+            finish,
+            list_open_tasks=True,
             completed=True,
             verdict="grounded",
         )

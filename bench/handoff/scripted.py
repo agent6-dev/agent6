@@ -49,7 +49,10 @@ def parent_reply(opening: str, answers: list[dict[str, Any]]) -> launch_env.Repl
         return "list_tasks", {}
     if answers[-1].get("tasks") and (
         unaccepted := [
-            r for r in lists[-1] if r["id"] in {t["id"] for t in tasks} and r["status"] != "passed"
+            # A text dispatch adds a child node. Mark descendants before their parents.
+            r
+            for r in reversed(lists[-1])
+            if r["title"] in job.TITLES and r["status"] != "passed"
         ]
     ):
         return [("update_task", {"id": r["id"], "status": "passed"}) for r in unaccepted]

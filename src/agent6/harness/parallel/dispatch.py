@@ -2,10 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """Dispatch a run's children and merge their work.
 
-`ParallelDispatcher` owns the policy: when to cut children, the DAG stamps, the events, the
+`ParallelDispatcher` owns the policy: when to cut children, the task notes, the events, the
 injected group spawner. A work dispatch starts its children in the background and returns;
 `settle` merges what finished at a turn boundary. `merge` projects child results into
-ordered merges, DAG stamps and notices; `panel` runs a panel's record-only batches
+ordered merges, task notes and notices; `panel` runs a panel's record-only batches
 through the same executor. Only the first-ranked child merges into the parent chain.
 """
 
@@ -150,7 +150,7 @@ class ParallelDispatcher:
         A segment is one task and one dispatch record, written before any launch.
         Several children are attempts `rank` orders. Each starts on a clone of the
         parent's committed HEAD under the parent's config and remaining budget, with no
-        turn cap or deadline of its own. `settle` completes the task at a turn boundary;
+        turn cap or deadline of its own. `settle` completes the dispatch at a turn boundary;
         agent6-owned git merges the work, and model-owned git retains its ref.
         Never ends the run: an unavailable spawner, a bad spec, a dirty tree, an unwritable
         record or a spawner fault each come back as the refusal for the caller to deliver.
@@ -248,7 +248,6 @@ class ParallelDispatcher:
                 self.write(record)
             except OSError as exc:
                 state.parallel_groups_dispatched -= 1
-                self.fail_nodes(record, "dispatch record could not be written")
                 lines.append(
                     self.refused(
                         f"could not persist the dispatch record ({exc}); nothing dispatched."
@@ -350,7 +349,7 @@ class ParallelDispatcher:
         submitted: set[str],
         reviewers: Sequence[child_records.ChildResult] = (),
     ) -> child_dispatch.DispatchRecord:
-        """Record a dispatch whose spawner failed: its nodes, its event, its message.
+        """Record a spawner failure without claiming a task result.
 
         Args:
             record: The running dispatch.
@@ -363,7 +362,6 @@ class ParallelDispatcher:
         """
         identity = record.identity
         self.log(f"PARALLEL: group {identity} dispatch failed: {exc}")
-        record = self.fail_nodes(record, f"dispatch failed: {exc}")
         for child in record.children:
             if child.session_id not in submitted:
                 self.emit(
@@ -578,7 +576,7 @@ class ParallelDispatcher:
         *,
         turn: int | None = None,
     ) -> child_records.DispatchResult:
-        """Settle, merge, stamp and complete a dispatch whose children have returned.
+        """Settle, merge and complete a dispatch whose children have returned.
 
         Work merges on a clean tree: the parent's uncommitted work is committed first. Each
         boundary advances the record first, so a crash in between leaves a resume one step to
@@ -603,13 +601,14 @@ class ParallelDispatcher:
         record = self.merged(record, by_id, clean=clean)
         merges = [parallel_merge.merge_of(child) for child in record.children]
         if record.node_id is None:
-            # Its id is on the record before its stamp: a resume never adds a second node.
+            # Persist the id before recording its work so a resume reuses the node.
             record = self.noded(record)
             self.write(record)
-        # A detached attempt can run only after the dispatch's task is final.
-        if not any(child.detached for child in record.children):
-            parallel_merge.stamp_segment_node(self.curator, record.node_id, merges, log=self.log)
-        message = parallel_merge.summary_text(record.identity, merges, record.ranking)
+        task_id = None if any(c.detached for c in record.children) else record.node_id
+        parallel_merge.record_outcomes(self.curator, task_id, merges, log=self.log)
+        message = parallel_merge.summary_text(
+            record.identity, merges, record.ranking, task_id=task_id
+        )
         self.record_return(record, message, merges)
         return child_records.DispatchResult(
             record.identity, True, tuple(merges), message, base=record.base
@@ -906,7 +905,7 @@ class ParallelDispatcher:
         child_dispatch.write_record(self.session_dir, record, now=self.clock())
 
     def noded(self, record: child_dispatch.DispatchRecord) -> child_dispatch.DispatchRecord:
-        """Give a task its DAG node, now that its outcome is known.
+        """Give a text dispatch its DAG node when the children return.
 
         A text dispatch adds its node under the task it was started from.
 
@@ -930,28 +929,6 @@ class ParallelDispatcher:
             log=self.log,
         )
         return record.model_copy(update={"node_id": node_id})
-
-    def fail_nodes(
-        self, record: child_dispatch.DispatchRecord, note: str
-    ) -> child_dispatch.DispatchRecord:
-        """Record a text brief's failure. A listed task keeps its status on a refusal.
-
-        Args:
-            record: The task's record.
-            note: Why the task failed.
-
-        Returns:
-            The record naming the node, for the caller to write.
-        """
-        if record.node_id is not None:
-            # No child produced a result. A listed task keeps its status and can be tried again.
-            return record
-        record = self.noded(record)
-        parallel_merge.stamp_parallel_node(
-            self.curator, record.node_id, status="failed", note=note, log=self.log
-        )
-        self.emit_graph_snapshot()
-        return record
 
     def emit_budget(self, turn: int) -> None:
         """Journal the meter after a settlement, so the children's charge is on the record."""

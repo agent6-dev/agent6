@@ -216,7 +216,7 @@ Hold a session's end and the snapshot a resume re-enters.
 
 - **Written by:** harness/loop
 - **Read by:** app/{execution, execution_finish, finalize, fork, frontend, resume, resume_record, resume_setup, resume_tree, undo}, app/parallel/resume, harness/{advice, finish_gates, guards, loop_resume, loop_state, loop_steer, metric_rules, quiet_turns}, ui/acp/frontend, ui/cli/ask
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (41 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (42 test files exercise it)
 
 ## ToolResult family
 
@@ -306,10 +306,11 @@ The task-graph nodes and the intents that mutate them.
 | `standing` | `bool` | `False` |
 | `graph_version` | `int` | `0` |
 | `held_by` | `tuple[str, ...]` | `()` |
+| `awaiting_mark` | `bool` | `False` |
 
 - **Written by:** graph/{curator, storage}
 - **Read by:** app/merge, graph/{order, replay}, harness/{advice, guards, loop}, harness/compaction/driver, harness/parallel/{merge, tasks}, harness/tasks/{focus, operator_tasks}, tools/{dag_tools, schema}, viewmodel/session/state
-- **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (24 test files exercise it)
+- **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (25 test files exercise it)
 
 ## Run/machine wire snapshot
 

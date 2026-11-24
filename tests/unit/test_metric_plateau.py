@@ -66,7 +66,7 @@ def test_final_slice_ties_spend_the_patience_then_stop() -> None:
     assert stop.log == f"LOOP: metric_plateau at turn {metric_rules.METRIC_PLATEAU_PATIENCE + 1}"
     end = stop.end()
     assert end.reason == "metric_plateau" and end.verdict == "grounded" and end.completed
-    assert end.summary == "score plateaued at 10 (1 open task(s): measure)"
+    assert end.summary == "score plateaued at 10" and end.list_open_tasks
 
 
 @pytest.mark.parametrize("spec", ["minimize target 28 -- score", "maximize target 27 -- score"])

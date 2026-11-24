@@ -3863,7 +3863,12 @@ def test_summarize_and_restart_applies_dag_checkoff() -> None:
             self._nodes = {
                 "01ROOT": {"parent_id": None, "status": "in_progress", "title": "review repo"},
                 "01DONE": {"parent_id": "01ROOT", "status": "pending", "title": "audit providers"},
-                "01OPEN": {"parent_id": "01ROOT", "status": "pending", "title": "audit sandbox"},
+                "01OPEN": {
+                    "parent_id": "01ROOT",
+                    "status": "pending",
+                    "title": "audit sandbox",
+                    "awaiting_mark": True,
+                },
             }
             self.passed: list[str] = []
             self.added: list[tuple[str | None, str]] = []
@@ -3886,7 +3891,7 @@ def test_summarize_and_restart_applies_dag_checkoff() -> None:
     summarizer = mock.MagicMock()
     summarizer.call.return_value = _resp(
         "Progress: finished the providers audit.\n\n"
-        '```checkoff\n{"completed_ids": ["01DONE", "01HALLUCINATED"], '
+        '```checkoff\n{"completed_ids": ["01DONE", "01OPEN", "01HALLUCINATED"], '
         '"new_tasks": ["fix the budget rounding bug"]}\n```'
     )
     logged: list[str] = []

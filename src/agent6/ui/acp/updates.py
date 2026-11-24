@@ -239,7 +239,9 @@ def plan_entries(tasks: tuple[state_types.TaskNodeView, ...]) -> tuple[model.Pla
     """
     return tuple(
         model.PlanEntry(
-            printable(task.title) + (" (failed)" if task.status == "failed" else ""),
+            printable(task.title)
+            + (" (failed)" if task.status == "failed" else "")
+            + (f" ({printable(task.note)})" if task.note else ""),
             "in_progress" if task.is_cursor else _PLAN_STATUS.get(task.status, "pending"),
         )
         for task in tasks

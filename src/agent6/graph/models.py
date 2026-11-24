@@ -115,6 +115,7 @@ class TaskNode(pydantic.BaseModel):
         notes: Appended prose.
         standing: The never-passing fallback node.
         held_by: Child ids from the live dispatch record, not stored in graph markdown.
+        awaiting_mark: A child returned and this open task waits for its parent.
         graph_version: The version of the mutation that last wrote the node, the number its
             journal entry carries; 0 unstamped. A node stamped newer than the journal's max
             version is a journal that lost its tail.
@@ -140,6 +141,7 @@ class TaskNode(pydantic.BaseModel):
     standing: bool = False
     graph_version: int = 0
     held_by: tuple[str, ...] = ()
+    awaiting_mark: bool = False
 
 
 class AddSubtaskIntent(pydantic.BaseModel):

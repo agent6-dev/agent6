@@ -989,6 +989,10 @@ def test_a_dispatched_task_joins_the_task_graph_when_its_work_merges(
         (None, _calls(("parallel", {"task": "write a"}), ("parallel", {"task": "write b"}))),
         (None, _calls(READ)),
         (end_both, _calls(READ)),
+        (
+            None,
+            _calls(*[("update_task", {"id": nid, "status": "passed"}) for nid in ("0002", "0003")]),
+        ),
         (None, _calls(("finish_session", {"summary": "done"}))),
     )
     wf = _harness(repo, layout.session_dir, provider, children, max_turns=5, curator=curator)
@@ -996,7 +1000,7 @@ def test_a_dispatched_task_joins_the_task_graph_when_its_work_merges(
     result = wf.run("start")
 
     assert result.reason == "finish_session"
-    assert not any("[harness focus] Current task" in seen for seen in provider.seen)
+    assert not any("[harness focus] Current task" in seen for seen in provider.seen[:3])
     nodes = curator.nodes()
     (root,) = [node for node in nodes.values() if node.parent_id is None]
     tasks = {node.title: node for node in nodes.values() if node.parent_id is not None}
@@ -1070,8 +1074,7 @@ def test_a_listed_task_is_held_before_launch_and_free_after_a_refusal(
     ]
     wf.parallel.close(2)
     node = graph.nodes()["0002"]
-    assert (node.held_by, node.status) == ((), "failed")
-    assert not work.start("", "", task_id="0002").children
+    assert (node.held_by, node.status, node.awaiting_mark) == ((), "pending", True)
 
 
 def test_resume_releases_a_prelaunch_hold_without_reusing_its_child_id(
@@ -1103,7 +1106,7 @@ def test_resume_releases_a_prelaunch_hold_without_reusing_its_child_id(
     assert work.start("", "", task_id="0002").children == ("run-p2-l1",)
     children.stop("run-p2-l1")
     wf.parallel.settle(conversation, 3)
-    assert graph.nodes()["0002"].status == "failed" and not graph.nodes()["0002"].held_by
+    assert graph.nodes()["0002"].status == "pending" and graph.nodes()["0002"].awaiting_mark
 
 
 def test_handing_off_the_only_ready_task_clears_the_parent_cursor_and_checkpoint(
@@ -1124,7 +1127,13 @@ def test_handing_off_the_only_ready_task_clears_the_parent_cursor_and_checkpoint
             _calls(("apply_edit", {"path": "basket", "new_string": "label"})),
         ),
         (lambda: children.end("run-p1-l1"), _calls(READ)),
-        (None, _calls(("finish_session", {"summary": "Counted"}))),
+        (
+            None,
+            _calls(
+                ("update_task", {"id": "0002", "status": "passed"}),
+                ("finish_session", {"summary": "Counted"}),
+            ),
+        ),
     )
     wf = _harness(repo, layout.session_dir, provider, children, max_turns=5, curator=graph)
     assert wf.run("Inventory").reason == "finish_session"
@@ -1178,7 +1187,9 @@ def test_a_text_dispatch_keeps_its_place_under_an_unheld_parent(tmp_path: pathli
     assert wf.tool_turn
     wf.parallel.settle(wf.tool_turn[0], 2)
     (nested,) = graph.get("0002").children
-    assert graph.get(nested).status == "passed"
+    assert graph.nodes()[nested].awaiting_mark
+    assert not work.start("", "", task_id="0002").children
+    graph.update_status(models.UpdateStatusIntent(id=nested, new_status="passed"))
     assert not refused.children and "pending" in refused.message
     assert work.start("", "", task_id="0002").children
 
@@ -1192,6 +1203,7 @@ def test_a_child_can_continue_without_reopening_its_passed_task(tmp_path: pathli
     (sid,) = work.start("", "", task_id="0002").children
     children.end(sid, path="first")
     wf.parallel.settle(conversation, 2)
+    graph.update_status(models.UpdateStatusIntent(id="0002", new_status="passed"))
     before = graph.nodes()["0002"]
     assert before.status == "passed"
     assert "continues" in work.steer(sid, "Check the count again")
@@ -1202,10 +1214,10 @@ def test_a_child_can_continue_without_reopening_its_passed_task(tmp_path: pathli
 
 
 @pytest.mark.parametrize("stopped", [False, True])
-def test_a_requested_merge_records_the_sha_only_on_the_task_its_result_passed(
+def test_a_requested_merge_records_the_sha_only_on_an_open_task(
     tmp_path: pathlib.Path, stopped: bool
 ) -> None:
-    """Merging the continuation records its commit unless a different execution passed the task."""
+    """An open task records a merge. A merge after the parent marked the task stays detached."""
     wf, children, graph = _listed_task(tmp_path)
     work = child_work.ChildWork(wf)
     assert wf.tool_turn
@@ -1224,8 +1236,9 @@ def test_a_requested_merge_records_the_sha_only_on_the_task_its_result_passed(
         (retry,) = work.start("", "", task_id="0002").children
         children.end(retry, path="count")
         wf.parallel.settle(conversation, 4)
+        graph.update_status(models.UpdateStatusIntent(id="0002", new_status="passed"))
     before = graph.get("0002")
-    assert before.status == "passed" and bool(before.commit_sha) is stopped
+    assert bool(before.commit_sha) is stopped
     work.merge(sid)
     wf.parallel.settle(conversation, 5)
     assert (children.repo / "pears").is_file()
@@ -1233,11 +1246,11 @@ def test_a_requested_merge_records_the_sha_only_on_the_task_its_result_passed(
     if stopped:
         assert after == before
     else:
-        assert after.status == "passed" and after.commit_sha == wf.parallel.chain.tip()
+        assert after.status == "pending" and after.commit_sha == wf.parallel.chain.tip()
 
 
 def test_merging_a_stopped_attempt_preserves_its_siblings_task(tmp_path: pathlib.Path) -> None:
-    """Only the merge of the result that passed the task supplies its commit."""
+    """Neither a stopped attempt nor a retained continuation changes a passed task."""
     wf, children, graph = _listed_task(tmp_path)
     work = child_work.ChildWork(wf)
     assert wf.tool_turn
@@ -1246,10 +1259,11 @@ def test_merging_a_stopped_attempt_preserves_its_siblings_task(tmp_path: pathlib
     children.stop(first, path="")
     children.stop(second, path="basket")
     wf.parallel.settle(conversation, 2)
-    assert graph.get("0002").status == "failed"
+    assert graph.nodes()["0002"].awaiting_mark
     work.steer(first, "Count the pears")
     children.end(first, path="pears")
     wf.parallel.settle(conversation, 3)
+    graph.update_status(models.UpdateStatusIntent(id="0002", new_status="passed"))
     passed = graph.nodes()["0002"]
     assert passed.status == "passed" and not passed.commit_sha
 
@@ -1260,7 +1274,7 @@ def test_merging_a_stopped_attempt_preserves_its_siblings_task(tmp_path: pathlib
     work.merge(first)
     wf.parallel.settle(conversation, 5)
     assert (children.repo / "pears").is_file()
-    assert graph.get("0002").commit_sha == wf.parallel.chain.tip()
+    assert graph.nodes()["0002"] == passed
 
 
 def test_close_reports_only_children_whose_tasks_await_resume(tmp_path: pathlib.Path) -> None:
@@ -1268,7 +1282,7 @@ def test_close_reports_only_children_whose_tasks_await_resume(tmp_path: pathlib.
     (sid,) = child_work.ChildWork(wf).start("", "", task_id="0002").children
     children.stop(sid)
     assert wf.parallel.close(1) == ((), ())
-    assert graph.get("0002").status == "failed"
+    assert graph.nodes()["0002"].awaiting_mark
 
 
 def test_a_refusal_interrupted_before_return_can_be_retried(
@@ -1316,7 +1330,7 @@ def test_a_retry_and_a_merge_cannot_own_one_task(tmp_path: pathlib.Path, merge_f
         assert graph.nodes()["0002"].held_by == (old,)
         wf.parallel.settle(conversation, 3)
         node = graph.nodes()["0002"]
-        assert not node.held_by and node.status == "passed" and node.commit_sha
+        assert node.awaiting_mark and node.status == "pending" and node.commit_sha
     else:
         (retry,) = work.start("", "", task_id="0002").children
         with pytest.raises(tool_errors.ToolError, match=f"held by {retry}"):

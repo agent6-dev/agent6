@@ -323,10 +323,10 @@ class ParallelInput(_ToolInput):
         ' with `git.control = "model"` the result names the ref that holds each child\'s commits.'
         " A selector that is a role name brings its model, effort and temperature;"
         " `provider/model` runs with the worker's. A notice arrives when a child ends,"
-        " with its summary, and when its task completes. `read_background` reads a child"
+        " with its summary, and when its dispatch completes. `read_background` reads a child"
         " or waits for the next to end; `steer_child` sends an instruction to a running"
         " child or continues an unmerged child; `stop_background` stops one. `finish_session`"
-        " is refused while a child runs or its task awaits completion at a turn boundary."
+        " is refused while a child runs or its dispatch awaits a result at a turn boundary."
         " Give `task` text or a ready `task_id` from `list_tasks`, not both."
     )
 
@@ -544,6 +544,7 @@ class DagUpdateTaskInput(_ToolInput):
         " along with a status change. Fields omitted stay unchanged. An end is"
         " final: a passed task takes only obsolete, and a skipped or obsolete"
         " one stays retired; add_task records work needed after all."
+        " When a child returns, mark its task passed or failed from its report."
     )
 
     id: str = pydantic.Field(min_length=1, max_length=26)

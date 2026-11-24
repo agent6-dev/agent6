@@ -76,6 +76,13 @@ class AddDependencyJournal(_JournalBase):
     depends_on: str
 
 
+class AppendNoteJournal(_JournalBase):
+    """A node gained a note without changing its status."""
+
+    op: Literal["append_note"] = "append_note"
+    id: str
+
+
 class RecordCommitJournal(_JournalBase):
     """A node's commit was recorded."""
 
@@ -96,6 +103,7 @@ JournalEntry = (
     | UpdateStatusJournal
     | AddDependencyJournal
     | RecordCommitJournal
+    | AppendNoteJournal
     | SetCursorJournal
 )
 
@@ -465,6 +473,24 @@ class GraphCurator:
             updated = self._write(updated)
             self._post_mutation(AddDependencyJournal(id=updated.id, depends_on=intent.depends_on))
             return updated
+
+    def append_note(self, node_id: str, note: str) -> None:
+        """Record an observation without moving the cursor or changing the task's status.
+
+        Args:
+            node_id: The task the observation belongs to.
+            note: The observation. Replaying the last note leaves the node alone.
+        """
+        with self._mutating():
+            node = self.get(node_id)
+            if node.notes == note or node.notes.endswith("\n" + note):
+                return
+            self._write(
+                node.model_copy(
+                    update={"notes": (node.notes + "\n" + note).strip(), "updated_at": _now()}
+                )
+            )
+            self._post_mutation(AppendNoteJournal(id=node_id))
 
     def record_commit(self, intent: models.RecordCommitIntent) -> models.TaskNode:
         """Record the commit for a node.

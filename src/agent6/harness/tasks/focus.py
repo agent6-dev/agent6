@@ -98,7 +98,11 @@ def current_task_banner(task_id: str, node: models.TaskNode, *, decompose: bool 
     paths = node.relevant_paths
     if paths:
         lines.append("Relevant paths: " + ", ".join(paths[:8]))
-    if node.standing:
+    if node.awaiting_mark:
+        lines.append(
+            "Read the child's report and mark this task passed or failed with update_task."
+        )
+    elif node.standing:
         # The curator refuses `passed` and every retirement on a standing task.
         lines.append(
             "This is a standing task: it never passes, so do not mark it passed;"
@@ -115,7 +119,7 @@ def current_task_banner(task_id: str, node: models.TaskNode, *, decompose: bool 
             " instead of switching to it now."
         )
     # Decompose runs plan recursively: a task that turns out large gets a finer plan.
-    if decompose and not node.children:
+    if decompose and not node.children and not node.awaiting_mark:
         lines.append(
             "If this task is itself large or multi-step, add child subtasks under"
             f" it (parent_id={task_id}) breaking it into finer steps, then do those."

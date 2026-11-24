@@ -122,14 +122,16 @@ def test_every_surface_reads_one_owner_note() -> None:
             "standing": True,
         },
     }
+    nodes["0002"].update(awaiting_mark=True, notes="child finished with no changes")
     views = state.task_tree_views(nodes, "0002")
     assert [(v.short_id, v.note) for v in views] == [
         ("1", ""),
-        ("2", ""),
+        ("2", "awaiting parent mark; child finished with no changes"),
         ("3", "queued by you"),
         ("4", "standing goal"),
     ]
     assert models.owner_note(created_by="user", parent_id=None, standing=False) == ""
     lines = task_tree.task_tree_lines(nodes, "0002")
+    assert "awaiting parent mark; child finished with no changes" in lines[1]
     assert lines[2].startswith("  3    ") and lines[2].endswith("queued  (queued by you)")
     assert lines[3].endswith("keep the suite green  (standing goal)")

@@ -225,7 +225,8 @@ def handle_silent_finish(
         state,
         loop_snapshot.End(
             reason,
-            text if wf.mode == "ask" else advice.with_open_tasks(text[:1000], wf.open_subtasks()),
+            text if wf.mode == "ask" else text[:1000],
+            list_open_tasks=True,
             completed=True,
             verdict="grounded" if reason == "silent_finish" else "passed",
         ),

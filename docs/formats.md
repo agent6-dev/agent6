@@ -3739,7 +3739,7 @@ Source: [`agent6.viewmodel.session.records.TaskNodeView`](https://github.com/age
 | `is_cursor` | `bool` | The worker is on this task. |
 | `created_by` | `str` | Who added the task; "" for a session dir written before the field existed. |
 | `standing` | `bool` | The task is the standing goal. |
-| `note` | `str` | The operator's mark ("queued by you", "standing goal") and any child ids holding the task, or "". |
+| `note` | `str` | Ownership, child work and task notes, or "". |
 | `short_id` | `str` | The id as the operator reads and types it. |
 | `glyph` | `str` | The status as every surface draws it; the cursor's task draws as in progress. |
 

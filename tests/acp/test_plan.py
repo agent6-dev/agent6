@@ -66,6 +66,7 @@ def test_each_task_status_maps_to_a_plan_status_in_depth_first_order() -> None:
         "0007": _node("Old plan", "obsolete", "0001"),
     }
 
+    nodes["0003"].update(awaiting_mark=True, notes="child finished with no changes")
     assert _fed(_graph(nodes, cursor="0003")) == [
         [
             ("Ship it", "in_progress"),
@@ -73,7 +74,7 @@ def test_each_task_status_maps_to_a_plan_status_in_depth_first_order() -> None:
             ("Find the caller (failed)", "pending"),
             ("Run the bench", "in_progress"),
             # The cursor's task is the one the worker is on, whatever its recorded status.
-            ("Write the fix", "in_progress"),
+            ("Write the fix (awaiting parent mark; child finished with no changes)", "in_progress"),
         ]
     ]
 

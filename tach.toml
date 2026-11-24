@@ -1045,7 +1045,7 @@ depends_on = []
 
 [[modules]]
 path = "agent6.graph.storage"
-depends_on = ["agent6.graph.models", "agent6.paths", "agent6.portable", "agent6.sessions.child_dispatch", "agent6.sessions.layout"]
+depends_on = ["agent6.graph.models", "agent6.graph.order", "agent6.paths", "agent6.portable", "agent6.sessions.child_dispatch", "agent6.sessions.layout"]
 
 [[modules]]
 path = "agent6.graph.curator"

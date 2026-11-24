@@ -105,6 +105,7 @@ class SessionResult:
         summary: The end's summary text.
         turns: The turns run.
         tool_calls: The tool calls made.
+        list_open_tasks: Include every open subtask in the receipt, not just those awaiting a mark.
         finish_payload: The finish tool's payload, when any.
         stale_gate: The replacement gate the worker last proposed in any finish_session call
             of the execution; recorded, never acted on.
@@ -141,6 +142,7 @@ class End:
         event: Whether to write the event; a detach writes none, the caller respawns the run.
         roots: Whether to pass the pending root tasks; None passes them on a clean verdict only.
         scoped: Whether a scoped gate certified the tree, for a `passed` verdict.
+        list_open_tasks: Include every open subtask in the receipt, not just those awaiting a mark.
         finish_payload: The finish tool's payload, when any.
         fields: Extra fields on the event.
     """
@@ -152,6 +154,7 @@ class End:
     checkpoint: bool = True
     event: bool = True
     roots: bool | None = None
+    list_open_tasks: bool = False
     scoped: bool = False
     finish_payload: dict[str, Any] | None = None
     fields: Mapping[str, Any] = dataclasses.field(default_factory=dict)

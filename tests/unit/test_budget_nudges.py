@@ -337,12 +337,16 @@ def test_the_queue_reports_only_changed_counts_and_its_drain() -> None:
     children.running.return_value = 2
     wf.__dict__["parallel"] = children
     nodes["q"] = test_harness._tn("q", parent_id="root", created_by="user")
+    nodes["held"] = test_harness._tn("held", parent_id="root", created_by="user", held_by=("c",))
     nodes["own"] = test_harness._tn("own", parent_id="root", created_by="worker")
-    first = "[harness queue] running children=2; queued tasks=1"
+    first = "[harness queue] running children=2; queued tasks=1; awaiting mark=0"
     assert lines() == [first]
     assert lines() == [first]
-    nodes["q"] = nodes["q"].model_copy(update={"status": "in_progress"})
+    nodes["q"] = nodes["q"].model_copy(update={"awaiting_mark": True})
     children.running.return_value = 0
-    empty = "[harness queue] running children=0; queued tasks=0"
-    assert lines() == [first, empty]
-    assert lines() == [first, empty]
+    returned = "[harness queue] running children=0; queued tasks=0; awaiting mark=1"
+    assert lines() == [first, returned]
+    nodes["q"] = nodes["q"].model_copy(update={"status": "failed", "awaiting_mark": False})
+    empty = "[harness queue] running children=0; queued tasks=0; awaiting mark=0"
+    assert lines() == [first, returned, empty]
+    assert lines() == [first, returned, empty]

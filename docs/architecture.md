@@ -490,6 +490,9 @@ The invariants:
 - A child cannot dispatch work: every child bootstrap sets `AGENT6_CHILD=1`, and `app.parallel.launch.dispatch_authority` separates work dispatch from panel scheduling.
 - Children end with the execution that started them (`ParallelDispatcher.close`).
 - A stopped child never merges by itself.
+- A completed dispatch releases its task and records the outcome as a note, with the commit if it merged.
+- The parent marks the task from the report with `update_task`.
+  Compaction leaves tasks awaiting a mark alone.
 - Under agent6-owned git a task's only child merges into the parent chain, and of several attempts only the first-ranked does.
 - Under `git.control = "model"` every child keeps its ref.
 - A child that fails to start, or whose import is refused, keeps its clone.

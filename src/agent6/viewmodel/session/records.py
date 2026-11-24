@@ -30,8 +30,7 @@ class TaskNodeView:
         is_cursor: The worker is on this task.
         created_by: Who added the task; "" for a session dir written before the field existed.
         standing: The task is the standing goal.
-        note: The operator's mark ("queued by you", "standing goal") and any child ids
-            holding the task, or "".
+        note: Ownership, child work and task notes, or "".
         short_id: The id as the operator reads and types it.
         glyph: The status as every surface draws it; the cursor's task draws as in progress.
     """

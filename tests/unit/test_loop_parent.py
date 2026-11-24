@@ -4,7 +4,7 @@
 
 A fake provider fires the steer once, and a fake group spawner fabricates real mergeable branches in
 the parent's tmp repo, so parse, the dirty-tree gate, the merge at the next turn boundary, DAG
-stamping, events and the notices run end-to-end. The fake's children have ended when it returns:
+notes, events and the notices run end-to-end. The fake's children have ended when it returns:
 the steer merges at turn 1's boundary, their work at turn 2's, and turn 3's call reads the notices.
 """
 
@@ -30,6 +30,7 @@ from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.harness.parallel import merge as parallel_merge
 from agent6.providers import provider_types
 from agent6.sessions import child_dispatch, journal
+from agent6.sessions import layout as sessions_layout
 from agent6.tools import results as tools_results
 from agent6.ui.cli import parallel as cli_parallel
 from agent6.vcs.git import ops as git_ops
@@ -108,7 +109,6 @@ class _FakeGraph:
     def __init__(self) -> None:
         self._seq = 0
         self.entries: dict[str, models.TaskNode] = {}
-        self.status_calls: list[tuple[str, str, str]] = []
         self.commit_calls: list[tuple[str, str]] = []
         self.graph_version = 0
 
@@ -147,10 +147,13 @@ class _FakeGraph:
         return types.SimpleNamespace(id=nid)
 
     def update_status(self, intent: Any) -> Any:
-        self.status_calls.append((intent.id, intent.new_status, intent.note))
         node = self.entries[intent.id]
         self.entries[intent.id] = node.model_copy(update={"status": intent.new_status})
         return types.SimpleNamespace(id=intent.id)
+
+    def append_note(self, node_id: str, note: str) -> None:
+        node = self.entries[node_id]
+        self.entries[node_id] = node.model_copy(update={"notes": note})
 
     def record_commit(self, intent: Any) -> Any:
         self.commit_calls.append((intent.id, intent.sha))
@@ -451,7 +454,9 @@ def _merges(provider: mock.MagicMock) -> list[str]:
     return [t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel] group")]
 
 
-def test_two_tasks_merge_in_the_order_written_and_stamp_their_nodes(tmp_path: pathlib.Path) -> None:
+def test_two_tasks_merge_in_the_order_written_and_record_their_commits(
+    tmp_path: pathlib.Path,
+) -> None:
     """Each `/parallel` in a message is a task: its own group, one child, merged in turn."""
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -479,10 +484,10 @@ def test_two_tasks_merge_in_the_order_written_and_stamp_their_nodes(tmp_path: pa
     assert "agent6/run-abc-p2-l1" in log
     assert "p1-l1" not in _git(repo, "log", "--oneline")
     assert log.index("p1-l1") > log.index("p2-l1")  # p1 merged first => older => lower in log
-    # Two steering nodes added beside the root, both passed with a recorded commit sha.
+    # Two steering nodes added beside the root, both open with a recorded commit sha.
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 2
-    assert all(n.status == "passed" and n.commit_sha for n in steering)
+    assert all(n.status in ("pending", "in_progress") and n.commit_sha for n in steering)
     assert all(n.rationale == "dispatched through /parallel by the operator" for n in steering)
     assert len(graph.commit_calls) == 2
     # The dispatch and merge rows name the same group.
@@ -544,15 +549,13 @@ def test_a_model_list_starts_one_attempt_per_model_and_merges_the_first_ranked(
         ("refactor the parser", "a/b"),
         ("refactor the parser", "c"),
     ]
-    # One DAG node for the task, passed with a merge sha, its note naming both children.
+    # One DAG node for the task, open with a merge sha, its note naming both children.
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 1
-    assert steering[0].status == "passed" and steering[0].commit_sha
-    note = next(
-        n for nid, status, n in graph.status_calls if (nid, status) == (steering[0].id, "passed")
-    )
-    assert f"{parent_id}-p1-l1 merged into parent chain at" in note
-    assert f"{parent_id}-p1-l2 ranked 2 of 2; not merged" in note
+    assert steering[0].status in ("pending", "in_progress") and steering[0].commit_sha
+    note = steering[0].notes
+    assert f"{parent_id}-p1-l1 finished; merged into parent chain at" in note
+    assert f"{parent_id}-p1-l2 finished; ranked 2 of 2; not merged" in note
     # The event names the winner and the attempt that kept its branch.
     (merged,) = events.of("parallel.returned")
     assert [(ln["session_id"], ln["status"]) for ln in merged["children"]] == [
@@ -666,9 +669,8 @@ def test_a_conflict_merges_nothing_and_names_the_files_and_the_branch(
     assert merged[1]["children"][0]["detail"] == "merge conflict in conflict.txt"
     (failed,) = events.of("parallel.failed")
     assert [ln["session_id"] for ln in failed["children"]] == [f"{parent_id}-p2-l1"]
-    # The conflicting node is marked failed (NodeStatus has no "blocked").
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
-    assert sorted(n.status for n in steering) == ["failed", "passed"]
+    assert len(steering) == 2 and all(n.status in ("pending", "in_progress") for n in steering)
     _clean, conflicted = _merges(provider)
     assert conflicted.splitlines()[1] == (
         "  - run-cf-p2-l1 (agent6/run-cf-p2-l1): CONFLICT -- merge conflict in conflict.txt;"
@@ -677,8 +679,10 @@ def test_a_conflict_merges_nothing_and_names_the_files_and_the_branch(
     )
 
 
-def test_tasks_whose_children_change_nothing_pass_without_merging(tmp_path: pathlib.Path) -> None:
-    """Children that ended with a result and no commit pass their nodes; nothing merges.
+def test_tasks_whose_children_change_nothing_stay_open_without_merging(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Children that ended with a result and no commit leave their nodes open.
 
     The chain ref, HEAD and the index stay where they were, the merge names `no_changes`, no
     `parallel.failed` fires and each notice says so.
@@ -713,7 +717,7 @@ def test_tasks_whose_children_change_nothing_pass_without_merging(tmp_path: path
     ]
     assert not events.of("parallel.failed")
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
-    assert [n.status for n in steering] == ["passed", "passed"]
+    assert len(steering) == 2 and all(n.status in ("pending", "in_progress") for n in steering)
     assert all(not n.commit_sha for n in steering)
     merges = _merges(provider)
     assert [t.count("finished with no changes to merge") for t in merges] == [1, 1]
@@ -733,8 +737,8 @@ def test_tasks_whose_children_change_nothing_pass_without_merging(tmp_path: path
     assert all(record.delivered for record in records)
 
 
-def test_three_tasks_each_stamp_their_own_outcome(tmp_path: pathlib.Path) -> None:
-    """One child committed, one ended clean, one failed: each task's stamp follows its child."""
+def test_three_tasks_each_record_their_own_outcome(tmp_path: pathlib.Path) -> None:
+    """One child committed, one ended clean and one failed. Only the first has a merge commit."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     parent_id = "run-mx"
@@ -764,7 +768,7 @@ def test_three_tasks_each_stamp_their_own_outcome(tmp_path: pathlib.Path) -> Non
     assert (repo / "child1.txt").read_text(encoding="utf-8") == "child 1\n"
     assert "agent6/run-mx-p1-l1" in _git(repo, "log", "--oneline", "refs/agent6/parent")
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
-    assert [n.status for n in steering] == ["passed", "passed", "failed"]
+    assert all(n.status in ("pending", "in_progress") for n in steering)
     assert [bool(n.commit_sha) for n in steering] == [True, False, False]
 
 
@@ -822,9 +826,8 @@ def test_failed_child_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
     assert [ln["status"] for row in merged for ln in row["children"]] == ["failed", "merged"]
     assert merged[0]["children"][0]["detail"] == "child boom"
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
-    assert sorted(n.status for n in steering) == ["failed", "passed"]
-    failed_note = next(note for _id, status, note in graph.status_calls if status == "failed")
-    assert "child boom" in failed_note
+    assert len(steering) == 2 and all(n.status in ("pending", "in_progress") for n in steering)
+    assert "child boom" in steering[0].notes
     transcript = viewmodel_transcript.fold_transcript(
         [{"type": event_type, **fields} for event_type, fields in events.emitted]
     )
@@ -885,8 +888,7 @@ def test_spawner_raising_never_aborts_the_run(tmp_path: pathlib.Path) -> None:
     assert any(t.count("disk full while cloning child 1") == 2 for t in texts)
     # No steering node is orphaned as pending, and neither record waits on a delivery.
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
-    assert len(steering) == 2
-    assert all(n.status == "failed" for n in steering)
+    assert not steering
     records = child_dispatch.read_records(tmp_path / parent_id)
     assert [(record.state, record.delivered) for record in records] == [("complete", True)] * 2
 
@@ -1081,12 +1083,14 @@ def _opening_wf(
     verify_command: tuple[str, ...] = (),
     crowns: bool = True,
     steer_text: str = "",
+    graph: curator.GraphCurator | None = None,
 ) -> tuple[loop.Harness, mock.MagicMock]:
     provider = mock.MagicMock()
     wf = _build_wf(
         repo,
         provider,
         steer_text=steer_text,
+        graph=graph,
         child_spawner=spawner,
         events=events,
         verify_command=verify_command,
@@ -1103,8 +1107,9 @@ def test_a_run_that_opens_with_a_ranked_dispatch_merges_the_winner_and_calls_no_
     repo = tmp_path / "repo"
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt")
-    events = _FakeEvents(tmp_path / "session" / "logs.jsonl")
-    wf, provider = _opening_wf(repo, spawner, events, order=(2, 1, 3))
+    graph = curator.GraphCurator(sessions_layout.SessionLayout(tmp_path / "state", "session"))
+    events = _FakeEvents(graph.layout.logs_path)
+    wf, provider = _opening_wf(repo, spawner, events, order=(2, 1, 3), graph=graph)
 
     result = wf.run("add a child file")
 
@@ -1122,7 +1127,8 @@ def test_a_run_that_opens_with_a_ranked_dispatch_merges_the_winner_and_calls_no_
         "  session-p1-l1: 2 of 3; agent6/session-p1-l1 holds its work",
         "  session-p1-l2: first; merged into parent chain at "
         + _git(repo, "rev-parse", "refs/agent6/parent")[:12],
-        "  session-p1-l3: 3 of 3; agent6/session-p1-l3 holds its work",
+        "  session-p1-l3: 3 of 3; agent6/session-p1-l3 holds its work"
+        " (1 open task(s): add a child file)",
     ]
 
 

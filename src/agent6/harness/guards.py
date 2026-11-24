@@ -238,16 +238,16 @@ def settled_end(state: loop_state.LoopState, ctx: advice.TurnContext) -> loop_sn
     if state.verify.ever_passed and ctx.tree_green() is not False:
         return loop_snapshot.End(
             "verify_settled",
-            advice.with_open_tasks(
-                "verify passed and the worker stopped making changes", ctx.open_subtasks()
-            ),
+            "verify passed and the worker stopped making changes",
+            list_open_tasks=True,
             completed=True,
             verdict="passed",
             scoped=state.verify.scoped,
         )
     return loop_snapshot.End(
         "settled",
-        advice.with_open_tasks(settled_reason(state, ctx), ctx.open_subtasks()),
+        settled_reason(state, ctx),
+        list_open_tasks=True,
         completed=True,
         roots=True,
     )

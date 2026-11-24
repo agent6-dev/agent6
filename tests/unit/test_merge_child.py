@@ -6,36 +6,25 @@ import pathlib
 import pytest
 
 from agent6 import directive
-from agent6.graph import curator as graph_curator
 from agent6.harness import loop_conversation, loop_state, toolset
 from agent6.harness.parallel import recovery as parallel_recovery
 from agent6.harness.parallel import work as child_work
 from agent6.sessions import child_dispatch
-from agent6.sessions import layout as sessions_layout
 from agent6.tools import tool_errors
 from tests.unit import test_children_background as background
 
 
 def test_a_stopped_child_merges_only_after_the_requested_boundary(tmp_path: pathlib.Path) -> None:
     """A requested merge holds finish until the boundary and is delivered once."""
-    repo = tmp_path / "repo"
-    background._init_repo(repo)
-    children = background._Children(repo, "parent")
-    graph = graph_curator.GraphCurator(
-        sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="parent")
-    )
-    harness = background._harness(
-        repo, tmp_path / "parent", None, children, max_turns=10, curator=graph
-    )
+    harness, children, graph = background._listed_task(tmp_path)
+    repo = children.repo
     dispatcher = harness.parallel
-    conversation = loop_conversation.Conversation()
-    state = loop_state.LoopState(original_task="work", tool_calls=0)
-    (sid,) = dispatcher.dispatch(
-        conversation, 1, state, [directive.Segment(task="work", spec="")]
-    ).children
+    assert harness.tool_turn
+    conversation, _, _ = harness.tool_turn
+    (sid,) = child_work.ChildWork(harness).start("", "", task_id="0002").children
     children.stop(sid, path="child.txt")
     dispatcher.settle(conversation, 2)
-    assert {node.status for node in graph.nodes().values()} == {"failed"}
+    assert {node.status for node in graph.nodes().values()} == {"pending"}
     before = dispatcher.chain.tip()
 
     def names() -> list[str]:
@@ -48,11 +37,11 @@ def test_a_stopped_child_merges_only_after_the_requested_boundary(tmp_path: path
     assert child_work.unmerged(dispatcher) == ((sid, "merge requested"),)
     dispatcher.settle(conversation, 3)
     assert (repo / "child.txt").is_file()
-    assert {node.status for node in graph.nodes().values()} == {"passed"}
+    assert {node.status for node in graph.nodes().values()} == {"pending"}
     assert "merge_child" not in names()
     assert not child_work.unmerged(dispatcher)
     assert not dispatcher.settle(conversation, 4)
-    assert len(background._events(tmp_path / "parent", "parallel.child_merged")) == 1
+    assert len(background._events(graph.layout.session_dir, "parallel.child_merged")) == 1
 
 
 @pytest.mark.parametrize("conflict", [False, True])

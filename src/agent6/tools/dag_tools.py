@@ -167,6 +167,8 @@ def list_tasks(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.ListTa
                 # A standing task never passes and never gates a finish.
                 "standing": node.standing,
                 **({"held_by": list(node.held_by)} if node.held_by else {}),
+                **({"notes": node.notes} if node.notes else {}),
+                **({"awaiting_mark": True} if node.awaiting_mark else {}),
             }
         )
     return results.ListTasksResult(tasks=tuple(out), count=len(out))

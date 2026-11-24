@@ -154,7 +154,9 @@ def test_three_listed_tasks_two_children_and_no_refill(
             release["Apples"].set()
             return ("read_background", {"id": one, "wait_s": 60})
         if turn == 10:
-            return ("update_task", {"id": "0004", "status": "passed"})
+            return [
+                ("update_task", {"id": nid, "status": "passed"}) for nid in ("0002", "0003", "0004")
+            ]
         return ("finish_session", {"summary": "inventory complete"})
 
     with launch_env.scripted_provider(reply_for=reply) as (url, _calls):
@@ -186,8 +188,8 @@ def test_three_listed_tasks_two_children_and_no_refill(
             ("0003", "in_progress", [two]),
             ("0004", "in_progress", []),
         ],
-        [("0002", "in_progress", [one]), ("0003", "passed", []), ("0004", "in_progress", [])],
-        [("0002", "passed", []), ("0003", "passed", []), ("0004", "in_progress", [])],
+        [("0002", "in_progress", [one]), ("0003", "in_progress", []), ("0004", "in_progress", [])],
+        [("0002", "in_progress", []), ("0003", "in_progress", []), ("0004", "in_progress", [])],
         [("0002", "passed", []), ("0003", "passed", []), ("0004", "passed", [])],
     ]
     for name, task_id, child in (("Apples", "0002", one), ("Pears", "0003", two)):
@@ -201,7 +203,7 @@ def test_three_listed_tasks_two_children_and_no_refill(
 
 
 @pytest.mark.parametrize("control", ["agent6", "model"])
-def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
+def test_a_parent_reads_each_result_and_marks_both_tasks(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -209,7 +211,7 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
 ) -> None:
     """Two `parallel` calls in one turn start two real children; the parent takes turns meanwhile.
 
-    Each task completes at its next boundary, merging only under agent6-owned git.
+    Each dispatch returns at its next boundary. The parent marks both tasks before finishing.
     """
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -244,7 +246,11 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
                 [("read_background", {"id": second, "wait_s": 120})],
                 [("read_background", {"id": first, "wait_s": 120})],
                 [("read_file", {"path": "README.md"})],
-                [("finish_session", {"summary": "both tasks completed"})],
+                [
+                    ("update_task", {"id": "0002", "status": "passed"}),
+                    ("update_task", {"id": "0003", "status": "passed"}),
+                    ("finish_session", {"summary": "both tasks completed"}),
+                ],
             ][min(turn, 4)]
         name = "a.txt" if who == "CHILD-A" else "b.txt"
         if turn == 1 and control == "model":
@@ -644,5 +650,5 @@ def test_child_tool_text_and_notices_state_both_git_policies() -> None:
     assert 'git.control = "model"' in text and "names the ref" in text
     for ids in (["one"], ["one", "two"]):
         notice = parallel_merge.started_text(ids)
-        assert "task completes" in notice
+        assert "dispatch completes" in notice
         assert "first merges" not in notice
