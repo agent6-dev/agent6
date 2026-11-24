@@ -565,7 +565,9 @@ def prepare_container_execution(
         options=options,
     )
     try:
-        record_git_exposure(checkout or root, controls)
+        # The container mounts the workspace: a clone's commands can write its `.git` as well.
+        for exposed in dict.fromkeys((root, checkout or root)):
+            record_git_exposure(exposed, controls)
         container.check_checkout(acquired.discovery, checkout or root, worktree_git_dir)
         container.check_hidden_paths(acquired.discovery, cfg.sandbox.hide_paths)
         # Commands run in the session's own checkout, at its path under the mounted workspace.

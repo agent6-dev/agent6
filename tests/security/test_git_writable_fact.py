@@ -109,10 +109,10 @@ def test_a_local_execution_records_the_access_before_its_session_opens(
     assert recorded == [True]
 
 
-def test_a_container_execution_records_the_access_before_it_is_prepared(
+def _recorded_when_a_clones_container_is_prepared(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The call in `prepare_container_execution` could go and every test stayed green."""
+) -> dict[str, bool]:
+    """Prepare a child clone's container execution; return which checkouts had a record by then."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     workspace = tmp_path / "workspace"
     clone = workspace / ".agent6/worktrees/repo-1/run-p1/child-1"
@@ -121,15 +121,14 @@ def test_a_container_execution_records_the_access_before_it_is_prepared(
     fake.running("a" * 64)
     for name in ("exposures", "check_hidden_paths"):
         monkeypatch.setattr(container, name, mock.Mock(return_value=()))
-    record = paths.git_exposure_record(clone)
-    recorded: list[bool] = []
+    recorded: dict[str, bool] = {}
 
     def _prepare(_found: container.ContainerDiscovery, **_kwargs: object) -> mock.Mock:
-        recorded.append(record.exists())
+        recorded["clone"] = paths.git_exposure_record(clone).exists()
+        recorded["workspace"] = paths.git_exposure_record(workspace).exists()
         return mock.Mock()
 
     monkeypatch.setattr(container, "prepare", _prepare)
-
     session_runtime.prepare_container_execution(
         Config(),
         workspace,
@@ -141,5 +140,22 @@ def test_a_container_execution_records_the_access_before_it_is_prepared(
         controls=_controls({"sandbox": {"isolation": "container"}}, "container"),
         reporter=app_reporter.Reporter(out=lambda _line: None, err=lambda _line: None),
     )
+    return recorded
 
-    assert recorded == [True]
+
+def test_a_container_execution_records_the_access_before_it_is_prepared(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The call in `prepare_container_execution` could go and every test stayed green."""
+    assert _recorded_when_a_clones_container_is_prepared(tmp_path, monkeypatch)["clone"]
+
+
+def test_a_container_run_of_a_clone_records_the_checkout_the_container_mounts(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A child's container run recorded its clone alone.
+
+    The container mounts the repository the clone lies in, so the child's commands could write
+    that repository's `.git` too, and `agent6 check sandbox` there said nothing.
+    """
+    assert _recorded_when_a_clones_container_is_prepared(tmp_path, monkeypatch)["workspace"]
