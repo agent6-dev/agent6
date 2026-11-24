@@ -29,7 +29,7 @@ def turn_context(**overrides: Any) -> advice.TurnContext:
         "verify_when": "finish",
         "verify_retries": 2,
         "finish_validator": None,
-        "metric": False,
+        "metric": None,
         "memory_advisory": False,
         "gate_present": lambda: False,
         "verify_command": lambda: (),

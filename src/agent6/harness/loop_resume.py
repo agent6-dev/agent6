@@ -246,7 +246,6 @@ def save_resume_snapshot(
         delivered_questions=tuple(state.delivered_questions),
         metric_revision=harness.metrics.revision,
         metric_best_score=best.score if best is not None else None,
-        metric_at_ceiling=state.metric.at_ceiling(),
         last_verify_ok=state.verify.last_ok,
         final_verify_id=state.verify.final_verify_id,
         verify_tree=state.verify.verify_tree,

@@ -558,7 +558,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### metric.ceiling_reached
 
-**Support: public.** The metric ceiling ended the run.
+**Support: public.** A plateau at or past the metric target triggered a stop.
 
 | Field | Type | Meaning |
 | --- | --- | --- |

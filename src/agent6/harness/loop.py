@@ -1424,7 +1424,7 @@ class Harness:
             verify_when=self.gate.when,
             verify_retries=self.gate.retries,
             finish_validator=self.finish_validator,
-            metric=self.metrics.active,
+            metric=self.dispatcher.metric if self.metrics.active else None,
             memory_advisory=self.state_dir is not None and self.config.harness.memory_advisory,
             end_rejected=lambda turn, ending: self.review_gate.end_rejected(
                 state, turn, ending=ending

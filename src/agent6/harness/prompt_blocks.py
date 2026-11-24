@@ -367,6 +367,8 @@ def build_system_prompt(
                 argv=json.dumps(list(metric.command)),
                 pattern=metric.pattern or "last printed number",
                 goal=metric.goal,
+                target=metric.target if metric.target is not None else "none",
+                policy=directive.METRIC_POLICY,
             )
         )
 

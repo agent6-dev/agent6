@@ -135,18 +135,27 @@ Give one run a score to improve, independent of its verify gate and any standing
 
 ```sh
 agent6 run --metric 'minimize -- python3 elapsed.py' "Reduce elapsed time"
-agent6 run --metric "maximize 'score: ([0-9.]+)' -- python3 bench.py" "Improve the score"
+agent6 run --metric "maximize 'score: ([0-9.]+)' target 8 -- python3 bench.py" "Improve the score"
 ```
 
 The metric uses UTF-8 text without carriage returns so its command and arguments survive a journal or queue read.
 
-The flag and the live `/metric` directive take the same spec: `maximize|minimize ["capture pattern"] -- command`.
+The flag and the live `/metric` directive take the same spec: `maximize|minimize ["capture pattern"] [target NUMBER] -- command`.
 Quote the whole spec on the command line so the shell passes one argument.
 The command is an argument list, not a shell script.
 With a pattern, the first capture group supplies the score; without one, agent6 takes the last printed number from stdout followed by stderr.
 A non-finite result or an incomplete capture with no identifiable last number gives no score.
 The command uses the run's command jail and approval policy, including for automatic readings after committed edits.
-The next turn sees the score and trend; a plateau can end a metric run.
+The next turn sees the score and trend.
+
+The optional target is a finite number: `maximize` reaches it at or above that score, `minimize` at or below it.
+Without a target there is no maximum, even if the score line contains `8/8`.
+
+- **Finish:** While more than a quarter of the budget remains, the metric can refuse a finish up to three times.
+  It allows the finish if the best score has reached the target or the remaining budget is unknown.
+- **Plateau:** After at least five parsed readings, a tie with the prior best counts as a plateau.
+  If the best has reached the target, a plateau can end the run at any budget.
+  Otherwise, with at most a quarter of the budget left or an unknown budget, the metric gives three plateau notices before another plateau can end the run.
 
 `/metric` shows the applied setting; `/metric SPEC` replaces it at the next turn boundary and starts a new trend; `/metric off` retires it.
 A resume, including Resume to fix, keeps the last setting; a fork takes the one at the selected checkpoint.

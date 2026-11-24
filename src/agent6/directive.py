@@ -19,6 +19,7 @@ Pure stdlib parsing with no agent6 imports: a leaf both layers sit above.
 from __future__ import annotations
 
 import dataclasses
+import math
 import re
 import shlex
 from collections.abc import Sequence
@@ -33,22 +34,29 @@ class DirectiveError(ValueError):
     """A directive or spec is malformed: a bare token, a missing task, a bad child count."""
 
 
-METRIC_SYNTAX = 'maximize|minimize ["capture pattern"] -- command'
+METRIC_SYNTAX = 'maximize|minimize ["capture pattern"] [target NUMBER] -- command'
+METRIC_POLICY = (
+    "The metric can refuse a finish up to three times while more than a quarter of the budget "
+    "remains. A plateau can end the run. Once the best score reaches or passes the target, "
+    "the metric allows a finish or a plateau stop at any budget."
+)
 _METRIC_TOKEN = re.compile(r"\A\s*/metric(?=\s|\Z)", re.IGNORECASE)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class MetricSpec:
-    """The operator's score direction, capture pattern and jailed argv."""
+    """The operator's score direction, capture pattern, jailed argv and optional target."""
 
     goal: Literal["maximize", "minimize"]
     pattern: str | None
     command: tuple[str, ...]
+    target: float | None = None
 
     def text(self) -> str:
         """Return the spec as input the operator can reuse."""
         pattern = (self.pattern,) if self.pattern is not None else ()
-        return shlex.join((self.goal, *pattern, "--", *self.command))
+        target = ("target", str(self.target).removesuffix(".0")) if self.target is not None else ()
+        return shlex.join((self.goal, *pattern, *target, "--", *self.command))
 
 
 def parse_metric(text: str) -> str | None:
@@ -93,9 +101,20 @@ def parse_metric_spec(text: str) -> MetricSpec:
             raise DirectiveError(f"invalid metric pattern: {exc}") from exc
         if not groups:
             raise DirectiveError("metric pattern needs a capture group for the score")
+    target = None
+    if args[:1] == ["target"]:
+        try:
+            target = float(args[1])
+        except (IndexError, ValueError) as exc:
+            raise DirectiveError("metric target must be a finite number") from exc
+        if not math.isfinite(target):
+            raise DirectiveError("metric target must be a finite number")
+        args = args[2:]
     if len(args) < 2 or args[0] != "--" or any(not a.strip() or "\x00" in a for a in args[1:]):
         raise DirectiveError(refusal)
-    return MetricSpec("maximize" if goal == "maximize" else "minimize", pattern, tuple(args[1:]))
+    return MetricSpec(
+        "maximize" if goal == "maximize" else "minimize", pattern, tuple(args[1:]), target
+    )
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -445,7 +464,7 @@ STEER_COMMANDS: dict[str, str] = {
     "/undo": "fork back to before your last message (the text returns to edit and resend)",
     "/btw": "ask a question beside the run: /btw <question> (answers inline, later)",
     "/task": "queue work into the task graph: /task <text> (worked when the queue drains)",
-    "/metric": f"Show the metric, set {METRIC_SYNTAX}, or turn it off.",
+    "/metric": f"Show the metric, set {METRIC_SYNTAX}, or use /metric off. {METRIC_POLICY}",
     "/standing": "set the goal the run returns to when the queue drains: /standing <text>",
     "/retire": "drop a task from the graph: /retire <task id>, the number the task tree shows",
     "/now": "steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)",

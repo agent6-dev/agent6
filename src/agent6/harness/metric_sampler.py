@@ -61,7 +61,10 @@ class MetricSampler:
         """Return the metric instruction that supersedes the frozen system prompt."""
         if not self.active or self.dispatcher.metric is None:
             return "[harness metric] No active metric. Disregard any earlier metric instructions."
-        return f"[harness metric] The operator's current metric: {self.dispatcher.metric.text()}"
+        return (
+            f"[harness metric] {directive.METRIC_POLICY} "
+            f"The operator's current metric: {self.dispatcher.metric.text()}"
+        )
 
     @property
     def goal(self) -> Literal["minimize", "maximize"] | None:
@@ -95,7 +98,7 @@ class MetricSampler:
             The feedback block for the model, or None without a metric.
         """
         goal = self.goal
-        if goal is None or self.dispatcher.metric is None:
+        if goal is None:
             return None
         score = metric_rules.coerce_metric_score(result.score)
         combined = f"{result.stdout}\n{result.stderr}"
@@ -107,12 +110,6 @@ class MetricSampler:
             stdout_tail=result.stdout[-500:],
             stderr_tail=result.stderr[-500:],
             targets=metric_rules.extract_metric_targets(combined, goal=goal),
-            # Only an X/Y ceiling on the score line counts, never a progress bar elsewhere.
-            at_ceiling=goal == "maximize"
-            and score is not None
-            and metric_rules.metric_at_fraction_ceiling(
-                combined, score, pattern=self.dispatcher.metric.pattern
-            ),
         )
         history.append(sample)
         self.emit(

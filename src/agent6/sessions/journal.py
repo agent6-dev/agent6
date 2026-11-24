@@ -621,7 +621,7 @@ class MetricAutoFailed(Event):
 
 
 class MetricCeilingReached(Event):
-    """The metric ceiling ended the run."""
+    """A plateau at or past the metric target triggered a stop."""
 
     TYPE: ClassVar[str] = "metric.ceiling_reached"
     turn: int = pydantic.Field(description="The execution's turn number.")

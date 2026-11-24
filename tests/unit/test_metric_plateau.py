@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from unittest import mock
 
+import pytest
+
+from agent6 import directive
 from agent6.harness import advice, loop_conversation, loop_state, metric_rules
 from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
@@ -25,7 +28,9 @@ def _tie(turn: int) -> loop_state.TurnState:
 
 def test_a_tie_with_runway_is_a_notice_that_costs_no_patience() -> None:
     state = loop_state.LoopState(original_task="t", tool_calls=0)
-    ctx = turn_context(metric=True, budget_remaining=lambda: 0.8)
+    ctx = turn_context(
+        metric=directive.parse_metric_spec("maximize -- score"), budget_remaining=lambda: 0.8
+    )
     for i in range(1, 6):
         answer = metric_rules.metric_plateau(_tie(i), state, ctx)
         assert isinstance(answer, advice.Nudge) and "80% of the budget remains" in answer.text
@@ -37,7 +42,10 @@ def test_a_tie_with_runway_is_a_notice_that_costs_no_patience() -> None:
 
 def test_final_slice_ties_spend_the_patience_then_stop() -> None:
     state = loop_state.LoopState(original_task="t", tool_calls=0)
-    ctx = turn_context(metric=True, open_subtasks=lambda: [("t1", "measure")])
+    ctx = turn_context(
+        metric=directive.parse_metric_spec("maximize -- score"),
+        open_subtasks=lambda: [("t1", "measure")],
+    )
     answers = [
         metric_rules.metric_plateau(_tie(i), state, ctx)
         for i in range(1, metric_rules.METRIC_PLATEAU_PATIENCE + 2)
@@ -57,13 +65,16 @@ def test_final_slice_ties_spend_the_patience_then_stop() -> None:
     assert end.summary == "score plateaued at 10 (1 open task(s): measure)"
 
 
-def test_a_ceiling_stops_at_once_with_its_event() -> None:
+@pytest.mark.parametrize("spec", ["minimize target 28 -- score", "maximize target 27 -- score"])
+def test_a_plateau_at_or_past_the_target_stops_without_waiting(spec: str) -> None:
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.metric = metric_rules.MetricGuard(
-        history=[metric_rules.MetricSample(label="best", score=27, returncode=0, at_ceiling=True)]
+        history=[metric_rules.MetricSample(label="best", score=27, returncode=0)]
     )
     stop = metric_rules.metric_plateau(
-        _tie(4), state, turn_context(metric=True, budget_remaining=lambda: 0.9)
+        _tie(4),
+        state,
+        turn_context(metric=directive.parse_metric_spec(spec), budget_remaining=lambda: 0.9),
     )
     assert isinstance(stop, advice.Stop)
     assert stop.event == journal.MetricCeilingReached(turn=4)
@@ -75,7 +86,12 @@ def test_a_turn_without_a_tie_is_quiet() -> None:
         number=1, resp=mock.MagicMock(), assistant=loop_conversation.AssistantMessage((), ())
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
-    assert metric_rules.metric_plateau(turn, state, turn_context(metric=True)) is None
+    assert (
+        metric_rules.metric_plateau(
+            turn, state, turn_context(metric=directive.parse_metric_spec("maximize -- score"))
+        )
+        is None
+    )
 
 
 def test_the_auto_metric_says_it_runs_after_each_committed_edit() -> None:
@@ -86,7 +102,6 @@ def test_the_auto_metric_says_it_runs_after_each_committed_edit() -> None:
     """
     from unittest import mock
 
-    from agent6 import directive
     from agent6.harness import metric_sampler
     from agent6.tools import tool_errors
 

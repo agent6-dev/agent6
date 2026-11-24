@@ -281,12 +281,11 @@ This run has a continuous-score metric (call via `run_metric_command`):
   argv: {argv}
   pattern: {pattern}
   goal: {goal}
+  target: {target}
 
-After every edit the harness judges -- a passing verify, or the step
-itself where no verify judges it -- the harness runs the metric and
-injects a `[harness metric]` block (latest, best, trajectory, verdict);
-manual calls are allowed. After enough samples, a judged edit that only
-ties the best may finish the run automatically.
+After a committed edit the harness reports the latest and best scores in a `[harness metric]` block.
+Manual calls are allowed.
+{policy}
 </metric-command>
 """
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from unittest import mock
 
+from agent6 import directive
 from agent6.harness import finish_gates, loop_conversation, loop_state, metric_rules
 from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
@@ -91,7 +92,9 @@ def test_the_panels_rejection_revokes_the_finish_without_a_text() -> None:
 
 def test_an_early_finish_on_a_metric_run_is_refused_while_runway_remains() -> None:
     state = _state()
-    runway = turn_context(metric=True, budget_remaining=lambda: 0.9)
+    runway = turn_context(
+        metric=directive.parse_metric_spec("maximize -- score"), budget_remaining=lambda: 0.9
+    )
     refusals = [metric_rules.metric_early_finish(_finishing(i), state, runway) for i in range(1, 5)]
     assert [r is not None for r in refusals] == [True, True, True, False]
     first = refusals[0]
@@ -109,17 +112,26 @@ def test_an_early_finish_on_a_metric_run_is_refused_while_runway_remains() -> No
     assert "(silent)" in silent.log
 
 
-def test_a_ceiling_the_final_slice_no_budget_signal_or_a_plain_run_lets_it_through() -> None:
-    at_ceiling = _state()
-    at_ceiling.metric = metric_rules.MetricGuard(
-        history=[metric_rules.MetricSample(label="best", score=27, returncode=0, at_ceiling=True)]
+def test_a_reached_target_the_final_slice_no_budget_signal_or_a_plain_run_lets_it_through() -> None:
+    state = _state()
+    state.metric.history.append(metric_rules.MetricSample(label="best", score=-1, returncode=0))
+    state.metric.history.append(metric_rules.MetricSample(label="latest", score=3, returncode=0))
+    runway = turn_context(
+        metric=directive.parse_metric_spec("minimize target 0 -- score"),
+        budget_remaining=lambda: 0.9,
     )
-    runway = turn_context(metric=True, budget_remaining=lambda: 0.9)
-    assert metric_rules.metric_early_finish(_finishing(), at_ceiling, runway) is None
-    final_slice = turn_context(metric=True, budget_remaining=lambda: 0.2)
+    assert metric_rules.metric_early_finish(_finishing(), state, runway) is None
+    final_slice = turn_context(
+        metric=directive.parse_metric_spec("maximize -- score"), budget_remaining=lambda: 0.25
+    )
     assert metric_rules.metric_early_finish(_finishing(), _state(), final_slice) is None
     assert (
-        metric_rules.metric_early_finish(_finishing(), _state(), turn_context(metric=True)) is None
+        metric_rules.metric_early_finish(
+            _finishing(),
+            _state(),
+            turn_context(metric=directive.parse_metric_spec("maximize -- score")),
+        )
+        is None
     )
     assert (
         metric_rules.metric_early_finish(

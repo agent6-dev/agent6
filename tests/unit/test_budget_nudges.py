@@ -8,6 +8,7 @@ wrap-up directive on a low budget, each once per run and only in its mode.
 
 from __future__ import annotations
 
+from agent6 import directive
 from agent6.harness import guards, loop_state, nudges
 from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
@@ -52,7 +53,9 @@ def test_a_plain_run_is_told_once_on_a_low_budget_naming_its_gate() -> None:
     assert nudge is not None and nudge.text == nudges.RUN_BUDGET_NUDGE
     assert guards.run_budget_nudge(_state(), turn_context(budget_remaining=lambda: 0.5)) is None
     assert guards.run_budget_nudge(_state(), turn_context()) is None
-    metric = turn_context(budget_remaining=lambda: 0.1, metric=True)
+    metric = turn_context(
+        budget_remaining=lambda: 0.1, metric=directive.parse_metric_spec("maximize -- score")
+    )
     assert guards.run_budget_nudge(_state(), metric) is None
     plan = turn_context(budget_remaining=lambda: 0.1, mode="plan")
     assert guards.run_budget_nudge(_state(), plan) is None

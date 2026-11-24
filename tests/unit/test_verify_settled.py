@@ -14,7 +14,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import config
+from agent6 import config, directive
 from agent6.harness import (
     advice,
     finish_gates,
@@ -392,7 +392,9 @@ def test_a_finish_call_a_metric_run_or_an_unseeded_run_disarms_it() -> None:
     finishing = _turn(9)
     finishing.finish = finish_gates.FinishCall("finish_session", "done")
     assert guards.verify_settled(finishing, state, ctx) is None
-    metric = turn_context(metric=True, tree_sha=lambda: "tree")
+    metric = turn_context(
+        metric=directive.parse_metric_spec("maximize -- score"), tree_sha=lambda: "tree"
+    )
     assert guards.verify_settled(_turn(9), state, metric) is None
     unseeded = loop_state.LoopState(original_task="t", tool_calls=0)
     assert guards.verify_settled(_turn(9), unseeded, ctx) is None

@@ -138,15 +138,13 @@ def restore_completion_state(state: LoopState, snap: loop_snapshot.SessionSnapsh
     state.last_steer = snap.last_steer
     state.pins = list(snap.pins)
     state.delivered_questions = list(snap.delivered_questions)
-    if snap.metric_at_ceiling or snap.metric_best_score is not None:
-        # One synthetic sample carries the prior best; the plateau stop re-arms after a
-        # few measurements, the ceiling stop is immediate.
+    if snap.metric_best_score is not None:
+        # The saved best counts as one reading toward a plateau.
         state.metric.history.append(
             metric_rules.MetricSample(
                 label="resumed",
                 score=snap.metric_best_score,
                 returncode=0,
-                at_ceiling=snap.metric_at_ceiling,
             )
         )
 

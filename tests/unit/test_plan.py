@@ -341,19 +341,24 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: pathlib.Pa
         recent_log="",
     )
     text = prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
-        metric=directive.parse_metric_spec(r"minimize 'CYCLES: (\d+)' -- python3 bench.py"),
+        metric=directive.parse_metric_spec(
+            r"minimize 'CYCLES: (\d+)' target 8 -- python3 bench.py"
+        ),
         config=cfg,
         repo=repo,
         mode="run",
         skills=None,
     )
-    assert "the harness runs the metric and" in text
+    assert "three times" in text and "quarter" in text and "plateau" in text
+    assert "target: 8" in text
     assert "[harness metric]" in text
     # Run-mode only: plan/ask do not expose `run_metric_command`, and the
     # auto-metric-after-verify behaviour the block describes is the run loop's.
     for mode in ("plan", "ask"):
         other = prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
-            metric=directive.parse_metric_spec(r"minimize 'CYCLES: (\d+)' -- python3 bench.py"),
+            metric=directive.parse_metric_spec(
+                r"minimize 'CYCLES: (\d+)' target 8 -- python3 bench.py"
+            ),
             config=cfg,
             repo=repo,
             mode=mode,

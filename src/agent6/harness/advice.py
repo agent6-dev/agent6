@@ -21,6 +21,7 @@ from agent6.harness import loop_snapshot
 from agent6.sessions import journal
 
 if TYPE_CHECKING:
+    from agent6 import directive
     from agent6.harness import loop_state
 
 
@@ -87,8 +88,8 @@ class TurnContext:
     verify_retries: int
     # A machine agent state's finish contract: the problems with a payload; None gates nothing.
     finish_validator: Callable[[dict[str, Any] | None], list[str]] | None
-    # A metric goal is configured: the plateau and ceiling rules own the run's end.
-    metric: bool
+    # The active metric, or None when this execution does not measure.
+    metric: directive.MetricSpec | None
     # A memory store is wired and `[harness].memory_advisory` is on.
     memory_advisory: bool
     gate_present: Callable[[], bool]

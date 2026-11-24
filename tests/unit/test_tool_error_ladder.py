@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from unittest import mock
 
+from agent6 import directive
 from agent6.harness import advice, guards, loop_conversation, loop_state, nudges
 from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
@@ -57,7 +58,11 @@ def test_a_denial_streak_is_named_a_refusal() -> None:
 
 
 def test_a_metric_run_and_the_other_modes_leave_the_ladder_alone() -> None:
-    for ctx in (turn_context(metric=True), turn_context(mode="plan"), turn_context(mode="ask")):
+    for ctx in (
+        turn_context(metric=directive.parse_metric_spec("maximize -- score")),
+        turn_context(mode="plan"),
+        turn_context(mode="ask"),
+    ):
         state = loop_state.LoopState(original_task="t", tool_calls=0)
         for _ in range(nudges.TOOL_ERROR_STOP_AFTER):
             state.spiral.note_error("read_file:bad path", denial=False, content="{}")

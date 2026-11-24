@@ -139,7 +139,7 @@ const STEER_COMMANDS = [
   ['/undo', 'fork back to before your last message (the text returns to edit and resend)'],
   ['/btw', 'ask a question beside the run: /btw <question> (answers inline, later)'],
   ['/task', 'queue work into the task graph: /task <text> (worked when the queue drains)'],
-  ['/metric', 'Show the metric, set maximize|minimize ["capture pattern"] -- command, or turn it off.'],
+  ['/metric', 'Show the metric, set maximize|minimize ["capture pattern"] [target NUMBER] -- command, or use /metric off. The metric can refuse a finish up to three times while more than a quarter of the budget remains. A plateau can end the run. Once the best score reaches or passes the target, the metric allows a finish or a plateau stop at any budget.'],
   ['/standing', 'set the goal the run returns to when the queue drains: /standing <text>'],
   ['/retire', 'drop a task from the graph: /retire <task id>, the number the task tree shows'],
   ['/now', 'steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)'],

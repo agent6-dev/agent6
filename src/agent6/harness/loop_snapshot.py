@@ -195,7 +195,7 @@ class SessionSnapshot(pydantic.BaseModel):
         gateless_ever_edited: Whether a gateless run edited the tree.
         metric_revision: The metric.set revision these scores describe, or zero without one.
         metric_best_score: The best metric score, when a metric is configured.
-        metric_at_ceiling: Whether the metric reached its ceiling.
+        metric_at_ceiling: Ignored on input and omitted on write.
         last_verify_ok: The last verify's result, carried only onto a clean tree at `head_sha`.
         edited_since_verify: Whether the tree changed after the last verify.
         baseline_ok: Whether the gate passed on the base commit `base_sha`.
@@ -244,7 +244,7 @@ class SessionSnapshot(pydantic.BaseModel):
     gateless_ever_edited: bool = False
     metric_revision: int = pydantic.Field(default=0, ge=0)
     metric_best_score: float | None = None
-    metric_at_ceiling: bool = False
+    metric_at_ceiling: bool = pydantic.Field(default=False, exclude=True)
     final_verify_id: str | None = None
     verify_tree: str | None = None
     last_verify_ok: bool | None = None

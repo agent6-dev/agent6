@@ -33,7 +33,7 @@ from agent6.harness import (
 )
 from agent6.harness.compaction import driver as compaction_driver
 from agent6.harness.compaction import elision as compaction_elision
-from agent6.sessions import journal
+from agent6.sessions import event_log, journal
 from agent6.tools import dispatch, results, tool_errors
 
 # The `[git]` surface the loop reads, empty as a real Config carries it unset.
@@ -140,9 +140,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: pathlib.Path) -> None:
     state.verify.ever_passed = True
     state.verify.scoped = True
     state.settled.gateless_ever_edited = True
-    state.metric.history.append(
-        metric_rules.MetricSample(label="x", score=27.0, returncode=0, at_ceiling=True)
-    )
+    state.metric.history.append(metric_rules.MetricSample(label="x", score=27.0, returncode=0))
     state.system, state.tool_calls, state.root_task_id = "s", 2, None
     loop_resume.save_resume_snapshot(wf, state, [], next_turn=4)
     loaded = loop_snapshot.load_session_snapshot(snap)
@@ -150,7 +148,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: pathlib.Path) -> None:
     assert loaded.verify_scoped is True
     assert loaded.gateless_ever_edited is True
     assert loaded.metric_best_score == 27.0
-    assert loaded.metric_at_ceiling is True
+    assert "metric_at_ceiling" not in json.loads(snap.read_text())
 
 
 def test_snapshot_preserves_run_lifetime_memory_state(tmp_path: pathlib.Path) -> None:
@@ -362,91 +360,46 @@ def test_malformed_snapshot_shapes_fail_loud(tmp_path: pathlib.Path) -> None:
         loop_snapshot.load_session_snapshot(snap)
 
 
-def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`_drive_loop` restores verify_ever_passed and an at-ceiling metric sample on resume.
-
-    One turn that finishes at once; the loop saw the restored history, so no early-finish
-    rejection.
-    """
-    config = types.SimpleNamespace(
-        sandbox=types.SimpleNamespace(hide_paths=()),
-        git=_GIT_STUB,
-        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types.SimpleNamespace(
-            standing_patience=-1,
-            went_quiet_max_nudges=4,
-            loop_guard_kill_threshold=10,
-            settled_stop_after=12,
-            stagnation_notice_after_s=300.0,
-            verify=types.SimpleNamespace(
-                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
-            ),
-        ),
+@pytest.mark.parametrize(
+    ("spec", "old_ceiling", "refused"),
+    [("maximize -- score", True, True), ("minimize target 30 -- score", False, False)],
+)
+def test_resume_judges_the_saved_best_against_only_the_journal_target(
+    tmp_path: pathlib.Path, spec: str, old_ceiling: bool, refused: bool
+) -> None:
+    """A stored ceiling flag cannot grant an early finish or hide a reached target."""
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
+    events.emit(journal.MetricSet(revision=1, spec=spec))
+    path = tmp_path / "loop_state.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 8,
+                "system": "s",
+                "messages": [],
+                "tool_calls": 0,
+                "next_turn": 3,
+                "root_task_id": None,
+                "original_task": "go",
+                "verify_command": [],
+                "metric_revision": 1,
+                "metric_best_score": 27,
+                "metric_at_ceiling": old_ceiling,
+            }
+        )
     )
-    provider = mock.MagicMock()
-    provider.call.return_value = types.SimpleNamespace(
-        text="",
-        tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
-        refused={},
-        stop_reason="tool_use",
-        input_tokens=1,
-        output_tokens=1,
-        raw={
-            "content": [
-                {
-                    "type": "tool_use",
-                    "id": "t1",
-                    "name": "finish_session",
-                    "input": {"summary": "done"},
-                }
-            ]
-        },
+    wf = _wf(events=events, config=Config())
+    state = loop_state.LoopState(original_task="go", tool_calls=0)
+    loop_resume.seed_carryover(
+        wf, state, loop_conversation.Conversation(), loop_snapshot.load_session_snapshot(path)
     )
-    dispatcher = mock.MagicMock(
-        last_verification=None, execution_id="execution", verify_withheld=False
+    ctx = dataclasses.replace(
+        wf._turn_context(state, turn=3, execution_start=3), budget_remaining=lambda: 0.9
     )
-    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
-    wf = _wf(
-        metric=directive.parse_metric_spec(r"maximize -- score"),
-        provider=provider,
-        dispatcher=dispatcher,
-        config=config,
-        mode="run",
+    turn = loop_state.TurnState(
+        number=3, resp=mock.MagicMock(), assistant=loop_conversation.AssistantMessage((), ())
     )
-
-    captured: dict[str, Any] = {}
-    orig = metric_rules.MetricGuard.at_ceiling
-
-    def _spy(guard: metric_rules.MetricGuard) -> bool:
-        captured["at_ceiling"] = orig(guard)
-        return captured["at_ceiling"]
-
-    monkeypatch.setattr(metric_rules.MetricGuard, "at_ceiling", _spy)
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
-        system="s",
-        conversation=loop_conversation.Conversation.from_wire(
-            [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
-        ),
-        tool_calls=0,
-        start_turn=3,
-        root_task_id=None,
-        original_task="go",
-        resume_from=loop_snapshot.SessionSnapshot(
-            system="s",
-            messages=[],
-            tool_calls=0,
-            next_turn=3,
-            root_task_id=None,
-            original_task="go",
-            verify_command=(),
-            metric_best_score=27.0,
-            metric_at_ceiling=True,
-        ),
-    )
-    assert result.completed is True
-    assert result.reason == "finish_session"
-    # The early-finish guard consulted the restored at-ceiling history.
-    assert captured.get("at_ceiling") is True
+    assert (metric_rules.metric_early_finish(turn, state, ctx) is not None) == refused
 
 
 class _EventCapture:

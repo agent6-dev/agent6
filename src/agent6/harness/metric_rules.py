@@ -16,9 +16,9 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.harness import advice, loop_snapshot
 from agent6.sessions import journal
-from agent6.tools import result_format
 
 if TYPE_CHECKING:
+    from agent6 import directive
     from agent6.harness import loop_state
 
 
@@ -35,8 +35,6 @@ class MetricSample:
         stdout_tail: The command's last stdout bytes.
         stderr_tail: The command's last stderr bytes.
         targets: The unmet thresholds parsed from the output (`extract_metric_targets`).
-        at_ceiling: Whether the output reported the score as a maxed-out fraction
-            (`metric_at_fraction_ceiling`).
     """
 
     label: str
@@ -47,7 +45,6 @@ class MetricSample:
     stdout_tail: str = ""
     stderr_tail: str = ""
     targets: tuple[float, ...] = ()
-    at_ceiling: bool = False
 
 
 def coerce_metric_score(value: Any) -> float | None:
@@ -123,43 +120,6 @@ def next_metric_target(
         return max(unmet) if unmet else None
     unmet = [t for t in targets if t >= current]
     return min(unmet) if unmet else None
-
-
-# A fraction in metric output, as the `27/27` in `SCORE: 27/27`.
-METRIC_FRACTION_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*/\s*([0-9]+(?:\.[0-9]+)?)")
-
-
-def metric_at_fraction_ceiling(text: str, score: float, *, pattern: str | None) -> bool:
-    """Return whether the text reports the score as a maxed-out `X/Y` fraction.
-
-    Graders print a bounded score as `SCORE: 27/27`: a numerator equal to both the parsed score
-    and the denominator puts the metric at its provable ceiling. Only fractions on the line the
-    score pattern matched count, so a progress bar's `100/100` elsewhere cannot latch it.
-
-    Args:
-        text: The metric command's output.
-        score: The parsed score.
-        pattern: The operator's score pattern, or None for the last number.
-
-    Returns:
-        Whether the score is at its ceiling; a bad pattern reads as no score line.
-    """
-    m = result_format.metric_match(text, pattern)
-    if m is None:
-        return False
-    text = m.string
-    start = text.rfind("\n", 0, m.start()) + 1
-    end = text.find("\n", m.end())
-    scan = text[start:] if end == -1 else text[start:end]
-    for num_s, den_s in METRIC_FRACTION_RE.findall(scan):
-        try:
-            num = float(num_s)
-            den = float(den_s)
-        except ValueError:  # pragma: no cover - regex already constrains digits
-            continue
-        if num == score and num == den:
-            return True
-    return False
 
 
 def metric_is_better(
@@ -240,8 +200,7 @@ def format_metric_feedback(
     if next_target is not None and latest.score is not None:
         direction = "below" if goal == "minimize" else "above"
         lines.append(
-            f"next target: {direction} {next_target:g} (current {latest.score:g}), the"
-            " nearest threshold not yet cleared"
+            f"next output threshold: {direction} {next_target:g} (current {latest.score:g})"
         )
     if latest.score is None:
         if latest.stdout_tail:
@@ -254,11 +213,9 @@ def format_metric_feedback(
 # Plateau notices a run in its final budget slice gets before the loop ends it.
 METRIC_PLATEAU_PATIENCE = 3
 
-# A plateau ends the run only once at most this fraction of the token budget remains.
-# With no budget signal the loop falls back to `METRIC_PLATEAU_PATIENCE` alone.
+# Without a reached target, only a low or unknown budget spends plateau patience.
 METRIC_PLATEAU_STOP_BELOW_BUDGET = 0.25
 
-# The notice states the fact and the budget; only the final slice ends a run on a plateau.
 METRIC_PLATEAU_NUDGE = (
     "[harness plateau] The recent verified edits did not improve the metric;"
     " {budget}. The best commit stands."
@@ -268,10 +225,8 @@ METRIC_PLATEAU_NUDGE = (
 # An early finish_session on an optimisation run is deferred a bounded number of times.
 METRIC_EARLY_FINISH_PATIENCE = 3
 METRIC_FINISH_NUDGE = (
-    "[harness budget] finish_session deferred: this is an optimisation run with"
-    " most of its budget unspent, and the metric's best commit stands. The call"
-    f" is honoured after {METRIC_EARLY_FINISH_PATIENCE} deferrals, or once the"
-    " budget is nearly spent."
+    "[harness budget] finish_session deferred: more than a quarter of the budget remains. "
+    f"The metric allows a finish after {METRIC_EARLY_FINISH_PATIENCE} deferrals."
 )
 
 
@@ -348,9 +303,15 @@ class MetricGuard:
         """Restart the plateau patience once a standing goal absorbed the stop."""
         self.plateau_nudges_used = 0
 
-    def at_ceiling(self) -> bool:
-        """Return whether any verified sample reached the metric's provable ceiling."""
-        return any(sample.at_ceiling for sample in self.history)
+    def reached_target(self, metric: directive.MetricSpec) -> bool:
+        """Return whether a score reached or passed the operator's target."""
+        target = metric.target
+        if target is None:
+            return False
+        scores = (sample.score for sample in self.history if sample.score is not None)
+        if metric.goal == "minimize":
+            return any(score <= target for score in scores)
+        return any(score >= target for score in scores)
 
 
 def metric_plateau(
@@ -358,10 +319,8 @@ def metric_plateau(
 ) -> advice.Nudge | advice.Stop | None:
     """Decide the metric run's end after a reading that only ties the best.
 
-    While the run has runway the tie draws the plateau notice; in the final budget slice, or
-    with no budget signal, the notice counts against `METRIC_PLATEAU_PATIENCE`, and past it the
-    run stops. A metric at its ceiling stops at once. The stop is an ending the end gates judge
-    and a standing task may absorb.
+    A tie at or past the target skips the plateau notices. Other ties spend patience only
+    in the final budget slice or with no budget signal. The end gates judge the stop.
 
     Args:
         turn: The turn's state; `metric_plateau_finish` carries the tie.
@@ -372,7 +331,7 @@ def metric_plateau(
         The nudge, the stop, or None when this turn's reading is not a tie.
     """
     finish = turn.metric_plateau_finish
-    if finish is None:
+    if finish is None or ctx.metric is None:
         return None
     remaining = ctx.budget_remaining()
     in_final_slice = remaining is None or remaining <= METRIC_PLATEAU_STOP_BELOW_BUDGET
@@ -387,7 +346,7 @@ def metric_plateau(
         )
 
     log = f"LOOP: metric_plateau at turn {turn.number}"
-    if guard.at_ceiling():
+    if guard.reached_target(ctx.metric):
         return advice.Stop(
             end,
             soft="metric_plateau",
@@ -419,7 +378,7 @@ def metric_early_finish(
     """Refuse an early finish on an optimisation run while runway remains.
 
     Above the final budget slice an early finish is rejected `METRIC_EARLY_FINISH_PATIENCE`
-    times. A metric at its ceiling, a run in the final slice, or no budget signal lets it
+    times. A reached target, a run in the final slice, or no budget signal lets it
     through, so a finish can never deadlock.
 
     Args:
@@ -430,7 +389,7 @@ def metric_early_finish(
     Returns:
         The refusal, or None when the finish goes through.
     """
-    if ctx.mode != "run" or not ctx.metric or state.metric.at_ceiling():
+    if ctx.mode != "run" or ctx.metric is None or state.metric.reached_target(ctx.metric):
         return None
     remaining = ctx.budget_remaining()
     if remaining is None or remaining <= METRIC_PLATEAU_STOP_BELOW_BUDGET:

@@ -2979,8 +2979,10 @@ def test_metric_plateau_nudge_states_the_remaining_budget() -> None:
     assert metric_rules.metric_plateau_nudge(0.20).startswith("[harness plateau]")
 
 
-def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Path) -> None:
-    """A metric plateau does not end the run while most of the budget is unspent."""
+def test_a_batch_count_on_the_score_line_cannot_end_a_plateau_with_budget_left(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A tie at throughput=8 with batches=8/8 spends no plateau patience with budget left."""
     from agent6 import budget as agent6_budget
 
     class ProviderStub:
@@ -2999,7 +3001,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Pa
         def __init__(self) -> None:
             self.calls: list[str] = []
             # Plateaus at the 5th sample and stays flat thereafter.
-            self.scores = iter([100.0, 80.0, 60.0, 50.0] + [50.0] * 20)
+            self.scores = iter([2.0, 4.0, 6.0, 8.0] + [8.0] * 20)
 
         def dispatch(
             self, name: str, raw_input: dict[str, Any], *, origin: object = None
@@ -3014,7 +3016,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Pa
                 score = next(self.scores)
                 return tools_results.MetricResult(
                     returncode=0,
-                    stdout=f"CYCLES: {score:g}\n",
+                    stdout=f"throughput={score:g} batches=8/8\n",
                     stderr="",
                     duration_s=0.1,
                     exec_failed=False,
@@ -3048,7 +3050,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Pa
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     max_turns = 12
     wf = _wf(
-        metric=directive.parse_metric_spec(r"minimize -- score"),
+        metric=directive.parse_metric_spec(r"maximize 'throughput=(\d+)' -- score"),
         root=tmp_path,
         config=config,
         provider=provider,
@@ -3306,50 +3308,11 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: pathlib.Path
     assert result.tool_calls == 1
 
 
-def test_metric_at_fraction_ceiling_detects_maxed_score() -> None:
-    # Maxed-out fraction: numerator == score == denominator.
-    assert (
-        metric_rules.metric_at_fraction_ceiling("SCORE: 27/27\n", 27.0, pattern=r"SCORE: (\d+)")
-        is True
-    )
-    assert (
-        metric_rules.metric_at_fraction_ceiling("passed 5 / 5 checks", 5.0, pattern=r"passed (\d+)")
-        is True
-    )
-    # Partial score is not the ceiling.
-    assert (
-        metric_rules.metric_at_fraction_ceiling("SCORE: 26/27\n", 26.0, pattern=r"SCORE: (\d+)")
-        is False
-    )
-    # Score that does not match the numerator is ignored.
-    assert (
-        metric_rules.metric_at_fraction_ceiling("SCORE: 27/27\n", 26.0, pattern=r"SCORE: (\d+)")
-        is False
-    )
-    # Unbounded metric (raw count, no denominator) never trips the ceiling.
-    assert (
-        metric_rules.metric_at_fraction_ceiling("CYCLES: 1487\n", 1487.0, pattern=r"CYCLES: (\d+)")
-        is False
-    )
-
-
-def test_metric_at_fraction_ceiling_scans_only_the_score_line() -> None:
-    # A tqdm 100/100 in stderr equals the score; the real score line has no denominator.
-    text = "SCORE: 100\n100%|##########| 100/100 [00:03<00:00, 33.1it/s]\n"
-    assert metric_rules.metric_at_fraction_ceiling(text, 100.0, pattern=r"SCORE: (\d+)") is False
-    # A genuine maxed fraction ON the score-pattern line still trips it.
-    assert metric_rules.metric_at_fraction_ceiling(
-        "junk 3/3\nSCORE: 27/27\n", 27.0, pattern=r"SCORE: (\d+)"
-    )
-    # No score-pattern match at all -> conservative False.
-    assert (
-        metric_rules.metric_at_fraction_ceiling("100/100\n", 100.0, pattern=r"SCORE: (\d+)")
-        is False
-    )
-
-
-def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> None:
-    """A finish_session at a maximize metric's provable ceiling (SCORE: N/N) is honoured at once."""
+@pytest.mark.parametrize(("clause", "refusals"), [("", 3), (" target 9", 3), (" target 8", 0)])
+def test_only_a_typed_target_allows_an_early_finish(
+    tmp_path: pathlib.Path, clause: str, refusals: int
+) -> None:
+    """The batch count beside throughput is not an operator target."""
     from agent6 import budget as agent6_budget
 
     class ProviderStub:
@@ -3362,7 +3325,6 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
             rendered = str(kwargs["messages"][-1])
             if "[harness budget]" in rendered:
                 self.finish_nudges_seen += 1
-            # First turn: pass verify (the auto-metric reports the ceiling). Then try to finish.
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id=f"verify-{self.calls}")
             return _tool_resp(
@@ -3383,11 +3345,11 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
             if name == "run_metric_command":
                 return tools_results.MetricResult(
                     returncode=0,
-                    stdout="SCORE: 27/27\n",
+                    stdout="throughput=8 batches=8/8\n",
                     stderr="",
                     duration_s=0.1,
                     exec_failed=False,
-                    score=27.0,
+                    score=8.0,
                 )
             return tools_results.RawResult({"ok": True})
 
@@ -3412,10 +3374,9 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
             ),
         ),
     )
-    # Huge ceilings keep fraction_remaining ~1.0: without the ceiling guard the finish is rejected.
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     wf = _wf(
-        metric=directive.parse_metric_spec(r"maximize 'SCORE:\s*([\d.]+)' -- score"),
+        metric=directive.parse_metric_spec(rf"maximize 'throughput=(\d+)'{clause} -- score"),
         root=tmp_path,
         config=config,
         provider=provider,
@@ -3439,10 +3400,9 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
             original_task="t",
         )
 
-    # Honoured on the very first finish_session, with no budget nudges.
     assert result.reason == "finish_session"
-    assert provider.finish_nudges_seen == 0
-    assert provider.calls == 2
+    assert provider.finish_nudges_seen == refusals
+    assert provider.calls == 2 + refusals
 
 
 # --- tier-aware metric targets --------------------------------------------
@@ -3509,7 +3469,7 @@ def test_format_metric_feedback_shows_next_target() -> None:
         ),
     ]
     text = metric_rules.format_metric_feedback(history, goal="minimize")
-    assert "next target: below 1579" in text
+    assert "output threshold: below 1579" in text
     assert "current 8256" in text
 
 
@@ -4056,13 +4016,13 @@ def test_metric_plateau_end_is_refused_while_a_subtask_is_open() -> None:
         "root": {"parent_id": None, "status": "in_progress", "title": "optimize"},
         "sub1": {"parent_id": "root", "status": "pending", "title": "measure variant"},
     }
-    wf = _wf(curator=_FakeGraph(nodes))
+    wf = _wf(
+        curator=_FakeGraph(nodes), metric=directive.parse_metric_spec("maximize target 10 -- score")
+    )
     state = _state(
         verify=verify_verdict.VerifyVerdict(ever_passed=True, last_ok=True),
         metric=metric_rules.MetricGuard(
-            history=[
-                metric_rules.MetricSample(label="ceiling", score=10, returncode=0, at_ceiling=True)
-            ]
+            history=[metric_rules.MetricSample(label="best", score=10, returncode=0)]
         ),
     )
     turn = _turn(metric_plateau_finish="score reached its ceiling")

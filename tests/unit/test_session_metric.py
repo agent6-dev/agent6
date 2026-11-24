@@ -15,11 +15,15 @@ from agent6.ui.cli import parser
 
 
 def test_run_metric_preserves_capture_and_command_arguments() -> None:
-    spec = r"""minimize 'cost -- ms: (\d+)' -- python3 'two words.py' --unit ms"""
+    spec = (
+        r"""minimize 'cost -- ms: (\d+)' target -0.123456789 -- python3 'two words.py' target 8"""
+    )
     args = parser.build_parser().parse_args(["run", "make it faster", "--metric", spec])
     assert args.metric.goal == "minimize"
     assert args.metric.pattern == r"cost -- ms: (\d+)"
-    assert args.metric.command == ("python3", "two words.py", "--unit", "ms")
+    assert args.metric.target == -0.123456789
+    assert args.metric.command == ("python3", "two words.py", "target", "8")
+    assert directive.parse_metric_spec(args.metric.text()) == args.metric
     assert not hasattr(parser.build_parser().parse_args(["resume", "id"]), "metric")
 
 
@@ -27,6 +31,12 @@ def test_run_metric_preserves_capture_and_command_arguments() -> None:
     "spec",
     [
         "up -- true",
+        "measure -- true",
+        "maximize target -- true",
+        "minimize target low -- true",
+        "minimize target NaN -- true",
+        "maximize target 1e999 -- true",
+        "maximize target 8 target 9 -- true",
         "minimize",
         "maximize --",
         "maximize '(' -- true",
@@ -88,9 +98,9 @@ def test_live_metric_is_visible_on_adoption_and_off_resets_the_guard(
     wf = _workflow(graph_curator.GraphCurator(layout), event_log.EventSink(layout.logs_path))
     layout.ensure()
     state = loop_state.LoopState(original_task="cost", tool_calls=0)
-    for text in ("maximize -- score", "minimize -- elapsed", "off"):
+    for text in ("maximize -- score target 8", "minimize target 0 -- elapsed", "off"):
         state.metric.history.append(
-            metric_rules.MetricSample(label="unrelated", score=9, returncode=0, at_ceiling=True)
+            metric_rules.MetricSample(label="unrelated", score=9, returncode=0)
         )
         did, said = directive_actions.submit_composer_line(layout.session_dir, f"/metric {text}")
         assert did and "next" in said
@@ -101,3 +111,5 @@ def test_live_metric_is_visible_on_adoption_and_off_resets_the_guard(
             f"metric: {text}",
         )
         assert wf.metrics.active == (text != "off")
+        if text != "off":
+            assert "three times" in wf.metrics.notice() and "plateau" in wf.metrics.notice()

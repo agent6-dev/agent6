@@ -106,6 +106,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help=(
             f"Score this run after each committed edit: {directive.METRIC_SYNTAX}. "
             "Quote the whole spec. Without a pattern, read the last printed number. "
+            f"{directive.METRIC_POLICY} "
             "Use /metric to show or replace it, /metric off to retire it."
         ),
     )
