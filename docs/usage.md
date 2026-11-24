@@ -468,7 +468,8 @@ Under agent6-owned git, `agent6 sessions merge <child> --into <branch>` merges a
 With `harness.parallel.tool = true` ([parallel](config.md#harnessparallel)), a run's model can call `parallel` with `task` text or a ready `task_id` from `list_tasks`.
 `spec` has the same grammar as `--parallel`, empty for one default child.
 With `{"task_id":"0002"}`, the child gets task `0002`'s title, rationale and acceptance.
-The child holds that task until its result returns. The parent can work on the next ready task.
+The child holds that task until its result returns.
+The parent's cursor moves to the next ready task or clears if none is ready.
 The task passes or fails with the child's result. A refused launch leaves the task available.
 A pending text dispatch under the task must return before the parent can hand off that task.
 A requested merge holds its task until the merge result is recorded.

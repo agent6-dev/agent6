@@ -204,7 +204,12 @@ def _harness(
         config=cfg,
         provider=provider,
         dispatcher=dispatch.ToolDispatcher(
-            root=repo, config=cfg, isolation="none", session_dir=session_dir, events=events
+            root=repo,
+            config=cfg,
+            isolation="none",
+            session_dir=session_dir,
+            events=events,
+            curator=curator,
         ),
         logger=lambda _m: None,
         events=events,
@@ -1074,6 +1079,40 @@ def test_resume_releases_a_prelaunch_hold_without_reusing_its_child_id(
     children.stop("run-p2-l1")
     wf.parallel.settle(conversation, 3)
     assert graph.nodes()["0002"].status == "failed" and not graph.nodes()["0002"].held_by
+
+
+def test_handing_off_the_only_ready_task_clears_the_parent_cursor_and_checkpoint(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The parent's graph and its later edit do not name the task its child holds."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="run")
+    graph = graph_curator.GraphCurator(layout)
+    children = _Children(repo, "run")
+    cursors: list[str | None] = []
+    provider = _Script(
+        (None, _calls(("add_task", {"title": "Count pears"}))),
+        (None, _calls(("parallel", {"task_id": "0002"}))),
+        (
+            lambda: cursors.append(graph.cursor()),
+            _calls(("apply_edit", {"path": "basket", "new_string": "label"})),
+        ),
+        (lambda: children.end("run-p1-l1"), _calls(READ)),
+        (None, _calls(("finish_session", {"summary": "Counted"}))),
+    )
+    wf = _harness(repo, layout.session_dir, provider, children, max_turns=5, curator=graph)
+    assert wf.run("Inventory").reason == "finish_session"
+    held = [
+        row
+        for row in _events(layout.session_dir, "graph.update")
+        if row["nodes"].get("0002", {}).get("held_by") == ["run-p1-l1"]
+    ]
+    (checkpoint,) = _events(layout.session_dir, "checkpoint.committed")
+    assert held and all(row["cursor"] is None for row in held)
+    assert cursors == [None]
+    assert not checkpoint["task_id"]
+    assert "Agent6-Task:" not in _git(repo, "show", "-s", "--format=%B", checkpoint["sha"])
 
 
 def test_handoff_resets_the_stuck_count_and_refuses_a_second_owner(tmp_path: pathlib.Path) -> None:

@@ -866,15 +866,7 @@ class Harness:
             state.focus.clear()
             return  # nothing decomposed yet, or the frontier is empty
         if cursor != current_id:
-            # A passed cursor task drops out of the frontier, so this moves forward.
-            try:
-                self.curator.set_cursor(models.SetCursorIntent(id=current_id))
-            except (
-                graph_curator.CuratorError,
-                OSError,
-                pydantic.ValidationError,
-            ) as exc:  # advisory; never fatal
-                self.log(f"LOOP: cursor advance skipped: {exc}")
+            self._move_cursor(current_id)
         self.tell(conversation, guards.stuck_on_task(state, current_id, nodes[current_id], nodes))
         if current_id == state.focus.surfaced_task_id:
             return  # already surfaced; the banner survives tier-1 elision
@@ -1852,15 +1844,31 @@ class Harness:
 
     # ---- the task graph ------------------------------------------------------
 
+    def _move_cursor(self, task_id: str | None) -> None:
+        """Move the focus or log why the cursor stayed in place."""
+        assert self.curator is not None
+        try:
+            self.curator.set_cursor(models.SetCursorIntent(id=task_id))
+        except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
+            self.log(f"LOOP: cursor advance skipped: {exc}")
+
     def _emit_graph_snapshot(self) -> None:
-        """Emit the task graph for the live viewers.
+        """Release focus on held work and emit the task graph for the live viewers.
 
         Each node projects to the fields the viewers render; a full dump would carry
         unbounded model text into the event log.
         """
         if self.curator is None:
             return
+        graph = self.curator.nodes()
         cursor = self.curator.cursor()
+        if cursor and (node := graph.get(cursor)) and node.held_by:
+            self._move_cursor(dag_focus.current_task_id(graph, cursor))
+            cursor = self.curator.cursor()
+        if self.tool_turn:
+            focus = self.tool_turn[1].focus
+            if (surfaced := graph.get(focus.surfaced_task_id or "")) and surfaced.held_by:
+                focus.surfaced_task_id = None
         # A frozen wire shape, pinned by test_graph_update_snapshot_payload_is_wire_stable.
         nodes = {
             nid: {
@@ -1872,7 +1880,7 @@ class Harness:
                 "standing": n.standing,
                 **({"held_by": list(n.held_by)} if n.held_by else {}),
             }
-            for nid, n in self.curator.nodes().items()
+            for nid, n in graph.items()
         }
         self.emit(journal.GraphUpdate(nodes=nodes, cursor=cursor))
 
