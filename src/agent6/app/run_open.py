@@ -127,7 +127,7 @@ def seed_steer(
         preflight.SessionRefusedError: The steer could not be written.
     """
     # The steer as a front-end recorded it before it launched the resume: its images and its id.
-    launch = ipc.take_launch_input(layout.session_dir, steer)
+    launch = ipc.take_launch_input(layout.session_dir, steer, follow_up=True)
     if not ipc.submit_steer(
         layout.session_dir,
         steer.strip(),

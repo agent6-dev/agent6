@@ -576,7 +576,7 @@ def test_a_parked_resume_queues_its_steer_with_the_images_sent_with_it(
     layout = _parked_run(repo, "run-PIMG")
     image = operator_input.ImageRef(media_type="image/png", byte_size=4, sha256="0" * 64)
     message = operator_input.OperatorInput(parts=("match this screenshot", image))
-    ipc.write_launch_input(layout.session_dir, message)
+    ipc.write_launch_input(layout.session_dir, message, follow_up=True)
     monkeypatch.setattr(session_runtime, "select_isolation", _full_isolation)
     monkeypatch.setattr(execution, "run_execution", _ended)
 
@@ -595,15 +595,11 @@ def test_a_parked_resume_queues_its_steer_with_the_images_sent_with_it(
     assert (queued.text, queued.images) == (message.text, (image,))
 
 
-def test_a_parked_tasks_images_wait_for_the_start_a_bare_resume_makes(
-    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("steer", ["", "also update the docs", "see this image"])
+def test_a_parked_tasks_images_wait_for_its_start(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, steer: str
 ) -> None:
-    """A bare resume of a parked run consumed the images recorded for its task.
-
-    A front-end records the task's images before it launches the run. The run parked, and the
-    resume looked the record up under its empty steer, which consumes it: the task then started
-    without its images.
-    """
+    """Reading the resume steer consumed the parked task's images before its first turn."""
     from agent6 import operator_input
     from agent6.app import resume as resume_mod
     from agent6.sessions import ipc
@@ -627,6 +623,12 @@ def test_a_parked_tasks_images_wait_for_the_start_a_bare_resume_makes(
     finally:
         lock.release_single_writer(holder_fd)
     assert parked == 2
+    follow_up = operator_input.OperatorInput(
+        parts=(steer, image.model_copy(update={"sha256": "1" * 64})), message_id="m2"
+    )
+    if steer == "see this image":
+        ipc.write_launch_input(session_dir, follow_up, follow_up=True)
+        steer = follow_up.text
     recorded: list[tuple[operator_input.ImageRef, ...]] = []
 
     def _execution(*_a: object, **_k: object) -> execution.ExecutionEnd:
@@ -638,11 +640,17 @@ def test_a_parked_tasks_images_wait_for_the_start_a_bare_resume_makes(
     monkeypatch.setattr(execution, "run_execution", _execution)
 
     rc = resume_mod.resume_task(
-        (), "run-PTASK", started_at=time.time(), frontend=mock.MagicMock(), force=False
+        (), "run-PTASK", started_at=time.time(), frontend=mock.MagicMock(), force=False, steer=steer
     )
 
     assert rc == 0
     assert recorded == [(image,)]
+    if steer == follow_up.text:
+        assert ipc.queued_steers(session_dir) == (
+            ipc.QueuedSteer(text=steer, images=follow_up.images, message_id="m2"),
+        )
+    elif steer:
+        assert ipc.read_steer_answer(session_dir) == steer
 
 
 def test_a_steer_survives_a_resume_that_parks_again(

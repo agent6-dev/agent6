@@ -1191,7 +1191,7 @@ def test_a_steer_that_resumes_a_run_is_its_continuation(
     # A steer whose front-end stored images enters the inbox with them.
     ref = test_operator_images.stored(session_dir)
     message = operator_input.OperatorInput(parts=("and match this", ref))
-    ipc.write_launch_input(session_dir, message)
+    ipc.write_launch_input(session_dir, message, follow_up=True)
     rc = resume_mod.resume_task(
         (), sid, started_at=time.time(), frontend=mock.MagicMock(), force=False, steer=message.text
     )

@@ -252,7 +252,7 @@ def test_a_resume_stores_the_images_and_launches_with_their_labels(
 
     assert (status, data["ok"]) == (200, True)
     steer = next(a for a in launched[0] if a.startswith("--steer=")).removeprefix("--steer=")
-    (ref,) = ipc.take_launch_input(session, steer).images
+    (ref,) = ipc.take_launch_input(session, steer, follow_up=True).images
     assert steer == f"now fix this\n\n[{ref.label()}]"
     assert attachments.load(session, ref) == kinds.MediaAttachment(png(2), "image/png", "")
 

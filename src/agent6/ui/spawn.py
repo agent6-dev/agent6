@@ -340,7 +340,7 @@ def spawn_detached_resume(
             return "a directive takes no image; send the image with an ordinary instruction"
         try:
             message = operator_images.accept(session_dir, steer, images)
-            ipc.write_launch_input(session_dir, message)
+            ipc.write_launch_input(session_dir, message, follow_up=True)
         except (operator_images.ImageRefusedError, OSError) as exc:
             return f"not resumed: {exc}"
         steer = message.text

@@ -97,7 +97,7 @@ def test_a_follow_up_prompts_image_goes_with_the_resume(
     test_runner._bridge({})._run(session, "", resuming=True, started_at=time.time())
 
     (steer,) = resumed
-    (ref,) = ipc.take_launch_input(session_dir, steer).images
+    (ref,) = ipc.take_launch_input(session_dir, steer, follow_up=True).images
     assert steer == f"[{ref.label()}]"  # an image alone is a prompt
     assert attachments.load(session_dir, ref).data == png(6)
 

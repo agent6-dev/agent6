@@ -368,7 +368,7 @@ def reset_bridge(
         keep_steer=scan.stop_reason == "setup_command_failed",
     )
     # The steer as a front-end recorded it before it launched the resume: its images and its id.
-    launch = ipc.take_launch_input(layout.session_dir, steer)
+    launch = ipc.take_launch_input(layout.session_dir, steer, follow_up=True)
     if steer.strip() and not ipc.submit_steer(
         layout.session_dir, steer, images=launch.images, message_id=launch.message_id
     ):

@@ -931,8 +931,9 @@ class QueuedSteer(pydantic.BaseModel, frozen=True, extra="forbid"):
 STEER_IMAGES_FILE = "steer.images"
 # The message id of the steer in the slot, written the same way.
 STEER_MESSAGE_ID_FILE = "steer.message_id"
-# The operator message that starts the next execution, when it carries images.
+# A parked task and its resume steer can both carry images and message ids.
 LAUNCH_INPUT_FILE = "launch.input"
+LAUNCH_STEER_FILE = "launch.steer"
 _IMAGE_REFS = pydantic.TypeAdapter(tuple[operator_input.ImageRef, ...])
 
 
@@ -955,36 +956,43 @@ def take_steer_images(session_dir: pathlib.Path) -> tuple[operator_input.ImageRe
         return ()
 
 
-def write_launch_input(session_dir: pathlib.Path, message: operator_input.OperatorInput) -> None:
+def write_launch_input(
+    session_dir: pathlib.Path, message: operator_input.OperatorInput, *, follow_up: bool = False
+) -> None:
     """Record the operator message the next execution starts from, before it is launched.
 
-    A front-end writes this only for a message with images: the words travel as the task
-    or the `--steer` text, and the execution takes the images when those words match.
+    The words travel as the task or the `--steer` text. The record carries its images and id.
 
     Args:
         session_dir: The session directory, reserved by the front-end for a new session.
         message: The message, its images already stored in the session's attachments.
+        follow_up: Write the resume steer rather than the task.
 
     Raises:
         OSError: The record cannot be written.
     """
     paths.mkdir_for_real_user(session_dir)
-    portable.atomic_write(session_dir / LAUNCH_INPUT_FILE, message.model_dump_json())
+    name = LAUNCH_STEER_FILE if follow_up else LAUNCH_INPUT_FILE
+    portable.atomic_write(session_dir / name, message.model_dump_json())
 
 
-def take_launch_input(session_dir: pathlib.Path, words: str) -> operator_input.OperatorInput:
+def take_launch_input(
+    session_dir: pathlib.Path, words: str, *, follow_up: bool = False
+) -> operator_input.OperatorInput:
     """Consume the launch record and return it when it is this execution's message.
 
     Args:
         session_dir: The session directory.
         words: The task or the resume steer as the operator gave it.
+        follow_up: Take the resume steer rather than the task.
 
     Returns:
         The recorded message whose text is `words`, with its images and its id; an empty
         message without a record, for an unreadable one, or for one left by a launch that
         never started.
     """
-    raw = _consume_answer(session_dir / LAUNCH_INPUT_FILE)
+    name = LAUNCH_STEER_FILE if follow_up else LAUNCH_INPUT_FILE
+    raw = _consume_answer(session_dir / name)
     if raw is None:
         return operator_input.OperatorInput()
     try:

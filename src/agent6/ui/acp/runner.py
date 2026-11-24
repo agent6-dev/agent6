@@ -465,7 +465,7 @@ class RunBridge:
             RpcError: The run failed, or agent6 refused the prompt.
         """
         layout = session.layout(agent6_paths.state_dir(session.cwd))
-        text = self._record_launch(session, layout.session_dir, text)
+        text = self._record_launch(session, layout.session_dir, text, resuming=resuming)
         journal_before = viewmodel_tail.journal_size(layout.logs_path)
 
         said: list[str] = []
@@ -558,7 +558,7 @@ class RunBridge:
         return stop_reason(code, stop_reason=reason)
 
     def _record_launch(
-        self, session: acp_session.Session, session_dir: pathlib.Path, text: str
+        self, session: acp_session.Session, session_dir: pathlib.Path, text: str, *, resuming: bool
     ) -> str:
         """Record the prompt in the run's own directory before the execution starts.
 
@@ -569,6 +569,7 @@ class RunBridge:
             session: The session the prompt came on.
             session_dir: The run's directory, reserved here for a new run.
             text: The prompt.
+            resuming: The prompt is a follow-up rather than the task.
 
         Returns:
             The words the execution runs: the prompt, then a label per image.
@@ -578,7 +579,7 @@ class RunBridge:
             return text
         message = operator_images.accept(session_dir, text, session.images)
         named = message.model_copy(update={"message_id": message_id})
-        ipc.write_launch_input(session_dir, named)
+        ipc.write_launch_input(session_dir, named, follow_up=resuming)
         return message.text
 
 
