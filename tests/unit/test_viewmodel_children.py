@@ -183,6 +183,25 @@ def test_parent_outcome_does_not_replace_the_childs_gate_or_stop_reason(
     assert label in receipt.render(receipt.read_receipt(parent, tmp_path))
 
 
+def test_a_missing_session_does_not_turn_a_failed_merge_into_a_launch_refusal(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The parent recorded the charge and the merge failure, not the child's exit status."""
+    parent = _session(tmp_path, "root")
+    merge = child_dispatch.MergeRecord(
+        branch="agent6/root-p1-l1", status="failed", detail="could not lock parent ref"
+    )
+    child_dispatch.write_record(parent, _record("root-p1", [("root-p1-l1", merge, 0.5)]), now=1)
+    (row,) = wire.manifest_header(parent)["children"]
+    assert not row["launched"] and row["settled"] and row["spend_usd"] == 0.5
+    assert (row["status"], row["outcome"], row["status_label"]) == (
+        "unreported",
+        "failed",
+        "unreported · failed",
+    )
+    assert row["error"] == "could not lock parent ref"
+
+
 def test_a_group_without_records_reads_its_children_from_lineage(tmp_path: pathlib.Path) -> None:
     """A group predating dispatch records still shows its children, with no merge to report."""
     state = tmp_path / "state"

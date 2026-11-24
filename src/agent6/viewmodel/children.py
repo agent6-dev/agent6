@@ -31,8 +31,9 @@ class ChildView:
         source: Who dispatched it: operator, model or panel; "" when no record says.
         task: Its task text; "" when unknown.
         model: Its selector, None for the worker's own settings.
-        route: The `provider/model` its manifest records; "" when it never started.
+        route: The `provider/model` its manifest records, or "" when unavailable.
         status: The child's own session or launch status. Read `outcome` for a parent merge.
+            `unreported` means the child's status is unknown, even when its merge failed.
         status_label: One line with the child's status and reason, then any parent outcome.
         outcome: The recorded dispatch outcome, including `stopped`, `ranked` and `retained`.
             An empty string means the parent has recorded no outcome.
@@ -316,8 +317,9 @@ def _recorded_child(
             return row.with_status("unreported" if child.reported else "starting")
         return row
     if not row.launched:
-        # An imported ref says nothing about the missing session's gate.
-        row = row.with_status("failed" if merge.status == "failed" else "unreported")
+        # A settled child's merge can fail even when its own status is unavailable.
+        launch_failed = merge.status == "failed" and not child.settled
+        row = row.with_status("failed" if launch_failed else "unreported")
     label = row.status_label
     if merge.status != row.status:
         outcome = (

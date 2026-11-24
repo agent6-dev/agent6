@@ -3042,8 +3042,8 @@ Source: [`agent6.viewmodel.children.ChildView`](https://github.com/agent6-dev/ag
 | `source` | `str` | Who dispatched it: operator, model or panel; "" when no record says. |
 | `task` | `str` | Its task text; "" when unknown. |
 | `model` | `str \| None` | Its selector, None for the worker's own settings. |
-| `route` | `str` | The `provider/model` its manifest records; "" when it never started. |
-| `status` | `str` | The child's own session or launch status. Read `outcome` for a parent merge. |
+| `route` | `str` | The `provider/model` its manifest records, or "" when unavailable. |
+| `status` | `str` | The child's own session or launch status. Read `outcome` for a parent merge. `unreported` means the child's status is unknown, even when its merge failed. |
 | `status_label` | `str` | One line with the child's status and reason, then any parent outcome. |
 | `outcome` | `str` | The recorded dispatch outcome, including `stopped`, `ranked` and `retained`. An empty string means the parent has recorded no outcome. |
 | `parent_merge_sha` | `str` | The merge commit on the parent's chain, "" when none. |
