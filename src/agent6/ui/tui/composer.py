@@ -84,19 +84,7 @@ def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, s
         return []
     if mode == "draft":
         return []
-    if mode == "start":
-        offered = {
-            c: h for c, h in directive.STEER_COMMANDS.items() if c in {"/parallel", "/review"}
-        }
-    elif mode == "resume":
-        offered = {
-            c: h
-            for c, h in directive.STEER_COMMANDS.items()
-            if c not in directive.LIVE_RUN_COMMANDS
-        }
-    else:
-        offered = directive.STEER_COMMANDS
-    return [(c, h) for c, h in offered.items() if c.startswith(text)]
+    return [(c.name, c.help) for c in directive.commands_for(mode) if c.name.startswith(text)]
 
 
 def complete_steer(text: str, *, mode: ComposerMode) -> str | None:

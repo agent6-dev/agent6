@@ -13,27 +13,20 @@ import warnings
 
 import pytest
 
+from agent6 import directive
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import composer
 
 
+def test_each_composer_offers_its_registered_rows() -> None:
+    for mode in ("start", "steer", "resume"):
+        assert composer.steer_suggestion_rows("/", mode=mode) == [
+            (c.name, c.help) for c in directive.commands_for(mode)
+        ]
+    assert not composer.steer_suggestion_rows("/", mode="draft")
+
+
 def test_rows_match_the_typed_prefix() -> None:
-    assert [c for c, _ in composer.steer_suggestion_rows("/", mode="steer")] == [
-        "/pin",
-        "/compact",
-        "/parallel",
-        "/restate",
-        "/review",
-        "/undo",
-        "/btw",
-        "/task",
-        "/metric",
-        "/standing",
-        "/retire",
-        "/now",
-        "/stop",
-        "/shells",
-    ]
     assert [c for c, _ in composer.steer_suggestion_rows("/p", mode="steer")] == [
         "/pin",
         "/parallel",
