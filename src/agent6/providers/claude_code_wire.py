@@ -170,6 +170,15 @@ def message_texts(message: Mapping[str, Any]) -> list[str]:
     return [str(b.get("text", "")) for b in message_blocks(message) if b.get("type") == "text"]
 
 
+def message_images(message: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Return a user message's own image blocks, which an operator sent with its text."""
+    return [
+        {"type": "image", "source": b["source"]}
+        for b in message_blocks(message)
+        if b.get("type") == "image" and message.get("role") == "user"
+    ]
+
+
 def tool_use_ids(message: Mapping[str, Any]) -> tuple[str, ...]:
     """Return the ids of a message's tool_use blocks, in order."""
     return tuple(
@@ -264,10 +273,14 @@ def render_history(messages: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]
     if not messages:
         return []
     first = "\n\n".join(message_texts(messages[0]))
+    opening = [{"type": "text", "text": first}, *message_images(messages[0])]
     if len(messages) == 1:
-        return [{"type": "text", "text": first}]
-    parts = [first, _HARNESS_REPLAY]
-    content: list[dict[str, Any]] = []
+        return opening
+    parts = [_HARNESS_REPLAY]
+    content: list[dict[str, Any]] = opening
+    if len(opening) == 1:
+        # Without images the task and the replay stay one text block.
+        parts, content = [first, _HARNESS_REPLAY], []
     names: dict[str, str] = {}
     for message in messages[1:]:
         role = str(message.get("role", "user"))
@@ -275,6 +288,10 @@ def render_history(messages: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]
             kind = block.get("type")
             if kind == "text":
                 parts.append(f"### {role}\n{block.get('text', '')}")
+            elif kind == "image" and role == "user":
+                content.append({"type": "text", "text": "\n\n".join(parts)})
+                parts.clear()
+                content.append({"type": "image", "source": block["source"]})
             elif kind == "tool_use":
                 name = str(block.get("name", ""))
                 names[str(block.get("id", ""))] = name

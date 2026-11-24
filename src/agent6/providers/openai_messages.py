@@ -74,6 +74,37 @@ def tool_result_media(
     return parts
 
 
+def user_images(content: list[Any], *, responses: bool = False) -> list[dict[str, Any]]:
+    """Encode a user message's own image blocks, which an operator sent with its text.
+
+    Args:
+        content: The user message's canonical blocks.
+        responses: Use the Responses dialect instead of Chat Completions.
+
+    Returns:
+        One user message holding the inline images, after the message's text; none without
+        an image.
+    """
+    parts: list[dict[str, Any]] = []
+    for block in content:
+        source = block.get("source") if isinstance(block, dict) else None
+        if not isinstance(source, dict) or block.get("type") != "image":
+            continue
+        url = f"data:{source.get('media_type')};base64,{source.get('data')}"
+        parts.append(
+            {"type": "input_image", "image_url": url}
+            if responses
+            else {"type": "image_url", "image_url": {"url": url}}
+        )
+    if not parts:
+        return []
+    return [
+        {"type": "message", "role": "user", "content": parts}
+        if responses
+        else {"role": "user", "content": parts}
+    ]
+
+
 def anthropic_to_openai_messages(  # noqa: PLR0912
     system: str, anthropic_msgs: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -81,7 +112,8 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
 
     Text blocks join into the message's string content; an assistant's `tool_use`
     blocks move into `tool_calls`; each `tool_result` becomes its own `role="tool"`
-    message, since the wire puts tool replies in their own role.
+    message, since the wire puts tool replies in their own role. A user message's own
+    images follow its text in a message of their own.
 
     Args:
         system: The system prompt, the first message.
@@ -97,9 +129,6 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
     for msg in anthropic_msgs:
         role = str(msg.get("role", "user"))
         content = msg.get("content", "")
-        if isinstance(content, str):
-            out.append({"role": role, "content": content})
-            continue
         if not isinstance(content, list):
             out.append({"role": role, "content": str(content)})
             continue
@@ -163,6 +192,7 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
                 out.append({"role": "user", "content": attachments})
             if text_chunks:
                 out.append({"role": role, "content": "\n\n".join(text_chunks)})
+            out.extend(user_images(content))
     return out
 
 

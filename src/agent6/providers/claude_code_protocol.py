@@ -69,7 +69,7 @@ def continue_session(
             (fatal), or the child moved on.
     """
     if not tail.results:
-        claude_code_session.write(s, claude_code_wire.user_line("\n\n".join(tail.texts)))
+        claude_code_session.write(s, claude_code_wire.user_line(tail.user_content()))
         return
     # With every call refused the CLI's next round already runs; the texts go in as a user line.
     answered = [i for i in s.pending if i not in s.refused]
@@ -77,7 +77,7 @@ def continue_session(
         s.refused.clear()
         s.pending = ()
         if tail.texts:
-            claude_code_session.write(s, claude_code_wire.user_line("\n\n".join(tail.texts)))
+            claude_code_session.write(s, claude_code_wire.user_line(tail.user_content()))
         return
     for tool_use_id in s.pending:
         if tool_use_id in s.refused:
@@ -88,6 +88,7 @@ def continue_session(
         content = list(tail.results[tool_use_id])
         if tool_use_id == answered[-1]:
             content.extend({"type": "text", "text": text} for text in tail.texts)
+            content.extend(tail.images)
         size = sum(
             len(str(item.get("text", "")).encode())
             for item in content

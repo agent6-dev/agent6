@@ -101,6 +101,8 @@ def responses_input(messages: list[dict[str, Any]], *, route: str) -> list[dict[
         content = msg.get("content", "")
         if isinstance(content, list):
             items.extend(_content_items(role, content, dropped_ids, route, paths))
+            if role == "user":
+                items.extend(openai_messages.user_images(content, responses=True))
         elif content:
             items.append(_message_item(role, str(content)))
     return items

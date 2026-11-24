@@ -123,10 +123,17 @@ class Tail:
     Attributes:
         results: The pending tool results by tool_use id.
         texts: The text blocks that follow them (notices, nudges, steer text).
+        images: The image blocks an operator sent with those texts.
     """
 
     results: dict[str, list[dict[str, Any]]]
     texts: tuple[str, ...]
+    images: tuple[dict[str, Any], ...] = ()
+
+    def user_content(self) -> str | list[dict[str, Any]]:
+        """Return the texts as one user line's content, with the images after them."""
+        text = "\n\n".join(self.texts)
+        return [{"type": "text", "text": text}, *self.images] if self.images else text
 
 
 def continuation(s: Session, messages: Sequence[Mapping[str, Any]]) -> Tail | None:
@@ -158,17 +165,17 @@ def continuation(s: Session, messages: Sequence[Mapping[str, Any]]) -> Tail | No
     if not tail or any(m.get("role") != "user" for m in tail):
         return None
     results: dict[str, list[dict[str, Any]]] = {}
-    texts: list[str] = []
+    carried = list(tail)
     if s.pending:
         results = claude_code_wire.tool_results(tail[0])
         if tuple(results) != s.pending:
             return None
-        texts.extend(claude_code_wire.message_texts(tail[0]))
         tail = tail[1:]
     if any(claude_code_wire.tool_results(m) for m in tail):
         return None
-    texts.extend(text for m in tail for text in claude_code_wire.message_texts(m))
-    return Tail(results=results, texts=tuple(texts)) if results or texts else None
+    texts = tuple(text for m in carried for text in claude_code_wire.message_texts(m))
+    images = tuple(image for m in carried for image in claude_code_wire.message_images(m))
+    return Tail(results=results, texts=texts, images=images) if results or texts else None
 
 
 def serve_inline(s: Session, msg: dict[str, Any]) -> bool:

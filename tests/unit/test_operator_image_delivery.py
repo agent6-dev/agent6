@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import base64
 import pathlib
 from typing import Any
 from unittest import mock
@@ -12,9 +13,15 @@ import pytest
 
 from agent6 import kinds, media, operator_input
 from agent6.harness import loop_conversation, loop_state, operator_bridge, provider_call
-from agent6.providers import provider_types
+from agent6.providers import (
+    anthropic,
+    claude_code_wire,
+    openai_messages,
+    provider_types,
+    responses_codec,
+)
 from agent6.sessions import attachments, ipc, journal
-from tests.unit import test_harness, test_operator_images
+from tests.unit import test_claude_code_provider, test_harness, test_operator_images
 
 png = test_operator_images.png
 stored = test_operator_images.stored
@@ -254,3 +261,72 @@ def test_an_opening_ignores_a_launch_record_written_for_other_words(
     ipc.write_launch_input(tmp_path, operator_input.OperatorInput(parts=("first task", ref)))
 
     assert ipc.take_launch_images(tmp_path, words) == ()
+
+
+def _operator_wire() -> tuple[list[dict[str, Any]], str]:
+    """Return a user message with an operator's image as providers get it, and its base64."""
+    conversation = loop_conversation.Conversation()
+    conversation.notice("look at this", origin="operator", images=(_image(),))
+    conversation.roll_cache_marks()
+    return conversation.to_wire(), base64.b64encode(png()).decode("ascii")
+
+
+def test_each_codec_sends_an_operators_image_as_user_content() -> None:
+    """The OpenAI codecs dropped a user message's own image block without a word."""
+    wire, data = _operator_wire()
+    url = f"data:image/png;base64,{data}"
+
+    assert openai_messages.anthropic_to_openai_messages("sys", wire)[1:] == [
+        {"role": "user", "content": "look at this"},
+        {"role": "user", "content": [{"type": "image_url", "image_url": {"url": url}}]},
+    ]
+    assert responses_codec.responses_input(wire, route="")[-2:] == [
+        {
+            "type": "message",
+            "role": "user",
+            "content": [{"type": "input_text", "text": "look at this"}],
+        },
+        {
+            "type": "message",
+            "role": "user",
+            "content": [{"type": "input_image", "image_url": url}],
+        },
+    ]
+    assert anthropic.shape_anthropic_messages(wire) is wire  # the block is Anthropic's own
+    source = {"type": "base64", "media_type": "image/png", "data": data}
+    assert claude_code_wire.render_history(wire) == [
+        {"type": "text", "text": "look at this"},
+        {"type": "image", "source": source},
+    ]
+    assert media.input_modalities(wire) == {"image"}
+
+
+def test_claude_code_sends_an_operators_image_at_the_start_and_on_a_steer(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A continuing call sent the steer's text and left its image behind."""
+    fake = test_claude_code_provider
+    binary, cap = fake._install(
+        tmp_path, {"turns": [[fake._round(text="ok")], [fake._round(text="again")]]}
+    )
+    provider = fake._provider(binary)
+    wire, data = _operator_wire()
+    image = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}}
+    steered = [
+        *wire,
+        {"role": "assistant", "content": [{"type": "text", "text": "ok"}]},
+        {"role": "user", "content": [{"type": "text", "text": "and this one"}, image]},
+    ]
+    try:
+        provider.call(system="s", messages=wire, tools=fake.TOOLS)
+        provider.call(system="s", messages=steered, tools=fake.TOOLS)
+        lines = [
+            line["message"]["content"] for line in fake._stdin(cap) if line.get("type") == "user"
+        ]
+        assert lines == [
+            [{"type": "text", "text": "look at this"}, image],
+            [{"type": "text", "text": "and this one"}, image],
+        ]
+        assert len(fake._spawns(cap)) == 1  # the steer continued the child
+    finally:
+        provider.close()
