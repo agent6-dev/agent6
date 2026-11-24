@@ -252,6 +252,7 @@ RUN_BUDGET_NUDGE_GATELESS = (
 
 # The budget line: what the execution has used of each cap, read before each worker call.
 BUDGET_LINE_PREFIX = "[harness budget] this execution: "
+QUEUE_LINE_PREFIX = "[harness queue] "
 
 
 def budget_line(snap: budget.BudgetSnapshot | None, *, turn: int, max_turns: int) -> str:

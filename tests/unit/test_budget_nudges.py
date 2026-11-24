@@ -324,3 +324,40 @@ def test_the_newest_budget_line_is_read_from_the_history() -> None:
     assert conv.latest_notice(nudges.BUDGET_LINE_PREFIX) == nudges.BUDGET_LINE_PREFIX + "turn=2/5"
     conv.restart("summary")
     assert conv.latest_notice(nudges.BUDGET_LINE_PREFIX) is None
+
+
+def test_the_queue_reports_only_changed_counts_and_its_drain() -> None:
+    """Only unfinished children and the operator's waiting tasks count."""
+    from unittest import mock
+
+    graph = mock.MagicMock()
+    nodes = {"root": test_harness._tn("root", created_by="user")}
+    graph.nodes.return_value = nodes
+    wf = test_harness._wf(curator=graph, mode="run")
+    conversation = loop_conversation.Conversation()
+    conversation.notice("Task")
+    ctx = turn_context(mode="run")
+
+    def lines() -> list[str]:
+        wf._show_run_state(conversation, ctx)
+        return [
+            block["text"]
+            for message in conversation.to_wire()
+            for block in message["content"]
+            if block.get("text", "").startswith("[harness queue]")
+        ]
+
+    assert lines() == []
+    children = mock.MagicMock()
+    children.running.return_value = 2
+    wf.__dict__["parallel"] = children
+    nodes["q"] = test_harness._tn("q", parent_id="root", created_by="user")
+    nodes["own"] = test_harness._tn("own", parent_id="root", created_by="worker")
+    first = "[harness queue] running children=2; queued tasks=1"
+    assert lines() == [first]
+    assert lines() == [first]
+    nodes["q"] = nodes["q"].model_copy(update={"status": "in_progress"})
+    children.running.return_value = 0
+    empty = "[harness queue] running children=0; queued tasks=0"
+    assert lines() == [first, empty]
+    assert lines() == [first, empty]

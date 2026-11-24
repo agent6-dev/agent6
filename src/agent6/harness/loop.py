@@ -773,7 +773,7 @@ class Harness:
                 self, state, action, before - compaction_window.context_chars(conversation)
             )
         # No roll follows the line: a second roll would drop the previous call's cache mark.
-        self._show_budget(conversation, ctx)
+        self._show_run_state(conversation, ctx)
         if local_cold or restarted or self.contract is not None:
             conversation.roll_cache_marks()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
@@ -837,10 +837,10 @@ class Harness:
             )
         return True
 
-    def _show_budget(
+    def _show_run_state(
         self, conversation: loop_conversation.Conversation, ctx: advice.TurnContext
     ) -> None:
-        """Show the worker what the execution has used of each cap, when the line changed.
+        """Show the worker its budget and queue when either changes.
 
         The history holds the last line shown, so a line a restart replaced shows again.
         A reviewer reads its reply count on every request instead.
@@ -866,6 +866,20 @@ class Harness:
         )
         if line and conversation.latest_notice(nudges.BUDGET_LINE_PREFIX) != line:
             conversation.notice(line)
+        if self.mode == "run":
+            running = self.children.running() if self.children is not None else 0
+            queued = (
+                sum(
+                    node.status == "pending" and models.queued_by_operator(node)
+                    for node in self.curator.nodes().values()
+                )
+                if self.curator is not None
+                else 0
+            )
+            previous = conversation.latest_notice(nudges.QUEUE_LINE_PREFIX)
+            queue = f"{nudges.QUEUE_LINE_PREFIX}running children={running}; queued tasks={queued}"
+            if (running or queued or previous) and queue != previous:
+                conversation.notice(queue)
 
     def _turn_before_call(
         self,
