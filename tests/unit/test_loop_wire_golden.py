@@ -272,6 +272,7 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
             helper_context_tokens=200000,
             helper=summariser,  # type: ignore[arg-type]
             drop_at_chars=2_000,
+            keep_recent_turns=0,
         ),
         resume_state_path=snap_path,
         bridge=operator_bridge.OperatorBridge(
@@ -359,9 +360,10 @@ def test_scenario_exercises_the_shaping_paths(tmp_path: pathlib.Path) -> None:
     )
     # Tier-1 gist elision landed before call 4.
     assert "distilled" in json.dumps(calls[3])
-    # Tier-2 restart: call 5 sees (original task + restart notice) only.
-    assert len(calls[4]) == 2
-    assert "PROGRESS: read a.md and b.md" in json.dumps(calls[4][1])
+    # The restart quotes operator text and keeps the unread call and result together.
+    assert "PROGRESS: read a.md and b.md" in json.dumps(calls[4][0])
+    assert calls[4][1]["role"] == "assistant"
+    assert calls[4][2]["content"][0]["type"] == "tool_result"
     # Rolling cache breakpoints: at most two marks, and call 2 keeps call 1's.
     for msgs in calls:
         marks = [

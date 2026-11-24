@@ -276,7 +276,11 @@ def operator_state(
         for question, answer in zip(item.questions, item.answers, strict=False):
             harness.steering.record_decision(state, question.question, answer)
         state.delivered_questions.append(item.id)
-    conversation.notice(answers_notice(late), origin="operator")
+    conversation.notice(
+        answers_notice(late),
+        origin="operator",
+        operator_words=tuple("\n".join(item.answers) for item in late),
+    )
     harness.emit(journal.QuestionDelivered(ids=[item.id for item in late]))
     return True
 

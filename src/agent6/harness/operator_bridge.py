@@ -256,7 +256,9 @@ class Steering:
             if inject:
                 state.settled.restart()
                 self.emit(journal.SteerInjected(chars=len(text), text=text))
-                conversation.notice(f"{heading}\n{message}", origin="operator")
+                conversation.notice(
+                    f"{heading}\n{message}", origin="operator", operator_words=(text,)
+                )
             else:
                 self.log(message)
                 self.emit(journal.SteerFeedback(text=message))
@@ -274,7 +276,7 @@ class Steering:
         asked = loop_conversation.last_assistant_prose(conversation)
         if question := nudges.ending_question(asked):
             self.record_decision(state, question, steer_text)
-        conversation.notice(f"{heading}\n{steer_text}", origin="operator")
+        conversation.notice(f"{heading}\n{steer_text}", origin="operator", operator_words=(text,))
         return None
 
     def skill(self, conversation: loop_conversation.Conversation, steer_text: str) -> bool:
@@ -299,6 +301,7 @@ class Steering:
             "OPERATOR STEERING (a mid-run instruction from the operator):\n"
             + skills.skill_steer_payload(skill.name, skill.text, args),
             origin="operator",
+            operator_words=(steer_text,),
         )
         return True
 
@@ -336,9 +339,10 @@ class Steering:
             self.emit(journal.PinRefused(chars=len(instruction), limit=PINS_MAX_CHARS))
             conversation.notice(
                 f"OPERATOR STEERING (not pinned: the {PINS_MAX_CHARS}-char pin cap is"
-                " full, so this instruction does not survive context compaction):\n"
+                " full, so this instruction is an ordinary steer):\n"
                 f"{instruction}",
                 origin="operator",
+                operator_words=(steer_text,),
             )
             return True
         self.log(f"  pinned instruction ({len(instruction)} chars, {len(state.pins)} pins)")
@@ -348,6 +352,7 @@ class Steering:
             " and binds for the rest of the run):\n"
             f"{instruction}",
             origin="operator",
+            operator_words=(steer_text,),
         )
         return True
 

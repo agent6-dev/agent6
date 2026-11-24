@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from typing import Any, Literal
 
 from agent6.harness import loop_conversation
-from agent6.harness.compaction import window
+from agent6.harness.compaction import retention, window
 from agent6.prompts import compaction
 from agent6.providers import provider_types
 
@@ -26,31 +26,15 @@ class Summary:
     block: dict[str, Any] | None = None
 
 
-def helper_input(
-    messages: Sequence[loop_conversation.Message],
-    instruction: str,
-    *,
-    context_tokens: int | None,
-    max_tokens: int,
-) -> str:
-    """Keep replaced text and tool inputs, dropping results and the oldest excess.
-
-    One UTF-8 byte per token is conservative; the reserve covers provider output floors.
+def _transcript_lines(messages: Sequence[loop_conversation.Message]) -> list[str]:
+    """Render the helper's transcript without tool output, except operator answers.
 
     Args:
-        messages: The replaced history, excluding the original task.
-        instruction: The task, check-off, pins, focus and prior summary.
-        context_tokens: The helper's known context window.
-        max_tokens: The configured output cap.
+        messages: The history being replaced.
 
     Returns:
-        The helper's bounded user message.
-
-    Raises:
-        ProviderError: The window is unknown or the fixed instruction cannot fit.
+        Transcript lines in their original order.
     """
-    if context_tokens is None:
-        raise provider_types.ProviderError("helper context window is unknown")
     parts: list[str] = []
     for message in messages:
         if isinstance(message, loop_conversation.AssistantMessage):
@@ -65,11 +49,42 @@ def helper_input(
                         + json.dumps(block.get("input") or {}, ensure_ascii=False)
                     )
         else:
-            parts.extend(
-                f"[user:text] {item.text}"
-                for item in message.items
-                if isinstance(item, loop_conversation.Notice)
-            )
+            for item in message.items:
+                if isinstance(item, loop_conversation.Notice):
+                    parts.append(f"[user:text] {item.text}")
+                else:
+                    parts.extend(
+                        f"[operator answer] {answer}" for answer in retention.operator_words(item)
+                    )
+    return parts
+
+
+def helper_input(
+    messages: Sequence[loop_conversation.Message],
+    instruction: str,
+    *,
+    context_tokens: int | None,
+    max_tokens: int,
+) -> str:
+    """Keep replaced text and tool inputs, dropping results and the oldest excess.
+
+    One UTF-8 byte per token is conservative; the reserve covers provider output floors.
+
+    Args:
+        messages: The replaced history.
+        instruction: The task, check-off, pins, focus and prior summary.
+        context_tokens: The helper's known context window.
+        max_tokens: The configured output cap.
+
+    Returns:
+        The helper's bounded user message.
+
+    Raises:
+        ProviderError: The window is unknown or the fixed instruction cannot fit.
+    """
+    if context_tokens is None:
+        raise provider_types.ProviderError("helper context window is unknown")
+    parts = _transcript_lines(messages)
     prefix = instruction + "\n\nTRANSCRIPT (oldest first, tool output removed):\n"
     missing = "[The beginning is missing because it does not fit the helper's window.]\n"
     # Reserve message framing as well as the largest built-in reasoning output floor.

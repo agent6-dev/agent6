@@ -120,7 +120,7 @@ def test_idle_summary_uses_the_cached_request_then_keeps_only_the_pending_reply(
     assert worker.calls[0]["messages"][:-1] == previous
     assert "write the summary now" in worker.calls[0]["messages"][-1]["content"].lower()
     conv.results([loop_conversation.ToolResultItem("wait", "finished", pending.tool_uses[0])])
-    assert len(conv) == 4 and "finished" in str(conv.to_wire()[-1])
+    assert len(conv) == 3 and "finished" in str(conv.to_wire()[-1])
     assert not compactor.idle(turn, time.monotonic())
 
 

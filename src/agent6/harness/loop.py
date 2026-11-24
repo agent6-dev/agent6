@@ -258,7 +258,7 @@ class Harness:
         if self.mode == "run" and self.events is not None:
             self.metrics.restore(self.events.path)
         system, conversation, root_id = (
-            self._open_task(user_task)
+            self._open_task(user_task, operator_task)
             if self.contract is None
             else self._open_contract(self.contract)
         )
@@ -272,11 +272,14 @@ class Harness:
             operator_task=operator_task,
         )
 
-    def _open_task(self, user_task: str) -> tuple[str, loop_conversation.Conversation, str | None]:
+    def _open_task(
+        self, user_task: str, operator_task: str
+    ) -> tuple[str, loop_conversation.Conversation, str | None]:
         """Open a worker's execution: the assembled system prompt, the task block, the root task.
 
         Args:
             user_task: The task, with any seed digest or skill block prepended.
+            operator_task: The operator's original words.
 
         Returns:
             The system prompt, the conversation holding the task block, and the root task's
@@ -328,7 +331,7 @@ class Harness:
         )
         initial_user = f"TASK:\n{user_task}\n\n{instructions}{dag_hint}"
         conversation = loop_conversation.Conversation()
-        conversation.notice(initial_user, origin="operator")
+        conversation.notice(initial_user, origin="operator", operator_words=(operator_task,))
         return system, conversation, root_id
 
     def _open_contract(
@@ -2015,10 +2018,11 @@ class Harness:
             self.bridge.should_interrupt,
         )
 
-        def notice(task: str | None = None) -> str:
+        def notice(operator_messages: Sequence[str] = (), *, task: str | None = None) -> str:
             return compaction_prompts.context_restart_notice(
                 self.mode,
                 endpoint_task=task,
+                operator_messages=operator_messages,
                 session_id=self.session_id
                 if any(t.name == schema.ReadSessionInput.TOOL_NAME for t in tools)
                 else "",
@@ -2037,7 +2041,7 @@ class Harness:
             task=state.original_task,
             pins=state.pins,
             restart_notice=notice,
-            endpoint_notice=lambda: notice(state.original_task),
+            endpoint_notice=lambda: notice(task=state.original_task),
             call_worker=calls.call_worker,
             call_endpoint=calls.call_endpoint,
             call_helper=calls.call_helper,

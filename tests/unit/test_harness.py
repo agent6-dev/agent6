@@ -3824,7 +3824,7 @@ def test_summarise_and_restart_reinjects_pins_verbatim() -> None:
     st = _state(pins=["never touch schema files", "goal:\nship X"])
     messages = _long_history(6)
     _restart_via_wire(wf, messages, state=st)
-    text = messages[1]["content"][0]["text"]
+    text = messages[0]["content"][0]["text"]
     assert "PINNED operator instructions (verbatim):" in text
     assert "1. never touch schema files" in text
     assert "2. goal:\nship X" in text
@@ -3841,14 +3841,13 @@ def test_summarise_and_restart_replaces_history() -> None:
         )
     )
     messages = _long_history(6)
-    original = messages[0]
+    original = messages.copy()
 
     _restart_via_wire(wf, messages)
 
-    # Collapsed to (original task, restart-with-summary).
-    assert len(messages) == 2
-    assert messages[0] == original
-    text = messages[1]["content"][0]["text"]
+    # Every turn fits the default caps.
+    assert messages[1:] == original
+    text = messages[0]["content"][0]["text"]
     assert "[harness context restart]" in text
     assert "best=42 at sha9" in text
     # The summariser saw the worker provider's content, not the worker itself.
@@ -3908,7 +3907,7 @@ def test_summarise_and_restart_applies_dag_checkoff() -> None:
     assert fake.added == [("01ROOT", "fix the budget rounding bug")]  # queued under the root
     # The log reports what landed: the cap and a refused status both shrink the request.
     assert any("check-off -- passed 1, queued 1" in line for line in logged), logged
-    restart_text = messages[1]["content"][0]["text"]
+    restart_text = messages[0]["content"][0]["text"]
     assert "providers audit" in restart_text
     assert "checkoff" not in restart_text  # bookkeeping block stripped from the restart
 
@@ -4482,8 +4481,8 @@ def test_maybe_compact_returns_restart_signal() -> None:
     # Over the threshold -> restart, returns True.
     big = _big_text_history("TASK: x", blocks=8, block_chars=100_000)
     assert _compact_via_wire(wf, big) is True
-    # History was replaced: [task, restart+summary, verbatim recent tail].
-    assert len(big) == 3
+    # The newest whole turn exceeds the cap. Its input and the pending notice survive.
+    assert [m["role"] for m in big] == ["user", "user", "assistant", "user"]
 
 
 def test_tier2_summariser_is_told_the_task() -> None:
@@ -4567,7 +4566,7 @@ def test_compact_request_forces_a_tier2_restart() -> None:
     small = _big_text_history("TASK: x", blocks=2, block_chars=100)  # nowhere near tier 2
     assert _compact_via_wire(wf, small) is True
     assert pending["req"] is False  # the marker was consumed
-    assert len(small) == 2  # history replaced by (task + summary)
+    assert len(small) == 6  # the restart notice and all five messages fit
     # No re-trigger without a fresh request (and still below the threshold).
     assert _compact_via_wire(wf, small) is False
 
@@ -4798,7 +4797,8 @@ def test_summarise_and_restart_falls_back_to_worker_provider() -> None:
 
     _restart_via_wire(wf, messages)
 
-    assert len(messages) == 2
+    assert messages[1:] == _long_history(4)
+    assert "summary text" in str(messages[0])
     worker.call.assert_called_once()
 
 
@@ -5444,11 +5444,11 @@ def test_tier2_summarise_fires_and_restarts_past_threshold(tmp_path: pathlib.Pat
     _compact_via_wire(wf, messages)
 
     assert summ.calls == 1  # tier-2 summariser ran
-    # Restarted to [task, restart+summary, recent tail]: the trailing small turn survives verbatim.
-    assert len(messages) == 3
-    assert messages[0]["content"][0]["text"] == "TASK: optimize the kernel"
-    assert "PROGRESS SUMMARY" in messages[1]["content"][0]["text"]
-    assert messages[2]["content"][0]["text"] == "keep going"
+    assert len(messages) == 4
+    assert "PROGRESS SUMMARY" in messages[0]["content"][0]["text"]
+    assert messages[1]["content"][0]["text"] == "keep going"
+    assert messages[2]["content"][0]["text"] == "x" * 100_000
+    assert messages[3]["content"][0]["text"] == "keep going"
     assert _ctx_chars(messages) < 500_000  # context actually shrank
 
 

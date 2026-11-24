@@ -22,8 +22,8 @@ from agent6.graph import curator as graph_curator
 from agent6.graph import models
 from agent6.harness import advice
 from agent6.harness.compaction import elision as compaction_elision
+from agent6.harness.compaction import retention, strategy, writers
 from agent6.harness.compaction import rules as compaction_rules
-from agent6.harness.compaction import strategy, writers
 from agent6.harness.compaction import window as compaction_window
 from agent6.prompts import compaction
 from agent6.providers import (
@@ -129,24 +129,18 @@ class _Scheduled(abc.ABC):
         """
         conversation = context.conversation
         messages = conversation.messages
-        reason = "size" if focus is None else "requested"
-        if idle_gap_s is not None:
-            reason = "idle"
-            tail_start = sent_count if sent_count is not None else len(conversation.complete())
-        elif self.endpoint:
-            tail_start = len(messages)
+        reason = "idle" if idle_gap_s is not None else "size" if focus is None else "requested"
+        if self.endpoint:
+            sent = len(messages) if sent_count is None else sent_count
+            replay = retention.Replay(messages[1:sent], (), messages[sent:])
         else:
-            tail_start = compaction_window.recent_tail_start(
-                messages, context.settings.keep_recent_chars
-            )
-            if tail_start <= 1:
-                tail_start = len(messages)
+            replay = retention.select(messages, context.settings)
         open_tasks = (
             advice.open_subtasks(context.curator.nodes()) if context.curator is not None else []
         )
         written = write_summary(
             context,
-            tail_start=tail_start,
+            replay=replay,
             writer="endpoint" if self.endpoint else context.settings.summariser,
             open_tasks=open_tasks,
             focus=focus or "",
@@ -158,7 +152,7 @@ class _Scheduled(abc.ABC):
         # Only after the narrative passed: bookkeeping alone never mutates the DAG.
         if open_tasks:
             apply_checkoff(context, raw, valid_ids={tid for tid, _ in open_tasks})
-        keep = messages[tail_start:]
+        keep = replay.tail
         if written.block is not None:
             conversation.adopt(
                 written.block,
@@ -167,7 +161,12 @@ class _Scheduled(abc.ABC):
                 awaiting_reply=context.awaiting_reply,
             )
         else:
-            conversation.restart(context.restart_notice() + summary, keep=keep, task=context.task)
+            conversation.restart(
+                context.restart_notice(replay.quotes) + summary,
+                keep=keep,
+                quotes=replay.quotes,
+                endpoint_task=context.task if self.endpoint else None,
+            )
         # Measured as the trigger is, prefix included, or tier 2 re-fires next turn.
         self.tier2_floor_chars = int(
             (
@@ -185,7 +184,7 @@ class _Scheduled(abc.ABC):
                 fallback_reason=written.fallback_reason,
                 summary_chars=len(summary),
                 summary=summary,
-                kept_messages=len(messages) - tail_start,
+                kept_messages=len(keep),
             )
         )
         if idle_gap_s is not None and written.writer != "helper":
@@ -352,7 +351,7 @@ def distill_gists(
 def write_summary(
     context: strategy.Context,
     *,
-    tail_start: int,
+    replay: retention.Replay,
     writer: writers.Writer,
     open_tasks: list[tuple[str, str]],
     focus: str,
@@ -361,7 +360,7 @@ def write_summary(
 
     Args:
         context: The prepared turn.
-        tail_start: The first message retained verbatim.
+        replay: History to replace and to retain.
         writer: The first summary writer to try.
         open_tasks: The tasks eligible for check-off.
         focus: The operator's summary focus.
@@ -375,6 +374,7 @@ def write_summary(
         ProviderInterrupted: A steer is pending.
     """
     messages = context.conversation.complete().messages
+    sent_count = len(context.conversation) - len(replay.tail)
     fallback_reason = ""
     if writer == "worker" and context.settings.endpoint.keeps_session:
         writer = "helper"
@@ -386,7 +386,7 @@ def write_summary(
         call_id = uuid.uuid4().hex
         context.emit(
             journal.CompactSummariseCall(
-                messages=tail_start if writer == "endpoint" else len(messages),
+                messages=sent_count if writer == "endpoint" else len(messages),
                 writer=writer,
                 fallback_reason=fallback_reason,
                 model_call_id=call_id,
@@ -402,12 +402,12 @@ def write_summary(
         )
         try:
             if writer == "endpoint":
-                resp = context.call_endpoint(request, call_id, tail_start)
+                resp = context.call_endpoint(request, call_id, sent_count)
             elif writer == "worker":
                 resp = context.call_worker(request, call_id)
             else:
                 request = writers.helper_input(
-                    messages[1:tail_start],
+                    replay.replaced,
                     request,
                     context_tokens=context.settings.helper_context_tokens,
                     max_tokens=context.settings.summary_max_tokens,

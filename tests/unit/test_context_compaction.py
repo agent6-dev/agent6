@@ -634,35 +634,6 @@ def test_context_chars_counts_an_unknown_block_type() -> None:
     assert compaction_window.context_chars(conv) >= 5_000
 
 
-def test_recent_tail_start_respects_cap_and_boundaries() -> None:
-    conv = loop_conversation.Conversation()
-    conv.notice("task")
-    conv.assistant([{"type": "tool_use", "id": "t1", "name": "read_file", "input": {"path": "a"}}])
-    last = conv.messages[-1]
-    conv.results(
-        [
-            loop_conversation.ToolResultItem(
-                tool_use_id="t1",
-                content="x" * 100,
-                for_call=last.tool_uses[0],  # type: ignore[union-attr]
-            )
-        ]
-    )
-    conv.assistant([{"type": "text", "text": "y" * 100}])
-    messages = conv.messages
-
-    # Cap covering only the final text message: the tail starts there.
-    assert compaction_window.recent_tail_start(messages, 150) == 3
-    # A results-message start is unsafe (its call was summarised away), so the cap advances past it.
-    assert compaction_window.recent_tail_start(messages, 210) == 3
-    # Cap covering the balanced call+result+text triple keeps all three.
-    assert compaction_window.recent_tail_start(messages, 100_000) == 1
-    # Cap 0 keeps nothing.
-    assert compaction_window.recent_tail_start(messages, 0) == len(messages)
-    # A cap smaller than the newest exchange keeps that exchange: its results may be undelivered.
-    assert compaction_window.recent_tail_start(messages, 50) == 3
-
-
 def _conv_with_repeated_reads(payload: str) -> loop_conversation.Conversation:
     conv = loop_conversation.Conversation()
     conv.notice("task")

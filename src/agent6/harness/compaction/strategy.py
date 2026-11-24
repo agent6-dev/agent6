@@ -25,7 +25,7 @@ class Context:
         task: The original task.
         pins: Operator instructions that survive a restart.
         endpoint_notice: Build the notice that follows a signed summary and its reply.
-        restart_notice: Build the restart header with current pins, rulings and verify fact.
+        restart_notice: Build the restart header with operator quotes, pins and run facts.
         call_endpoint: Ask the endpoint to summarise the given request.
         call_worker: Append one instruction to the worker request using the supplied call id.
         call_helper: Send system and user text to the helper using the supplied call id.
@@ -48,7 +48,7 @@ class Context:
     task: str
     pins: Sequence[str]
     endpoint_notice: Callable[[], str]
-    restart_notice: Callable[[], str]
+    restart_notice: Callable[[Sequence[str]], str]
     call_endpoint: Callable[[str, str, int], provider_types.ProviderResponse]
     call_worker: Callable[[str, str], provider_types.ProviderResponse]
     call_helper: Callable[[str, str, str], provider_types.ProviderResponse]
@@ -102,7 +102,7 @@ class Strategy(Protocol):
     """Compact the history of one worker request."""
 
     def compact(self, context: Context) -> bool:
-        """Keep a valid history with the original task and complete tool exchanges.
+        """Keep a valid history with complete tool exchanges.
 
         Args:
             context: The live conversation and this turn's services.

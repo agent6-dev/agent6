@@ -81,11 +81,13 @@ class Notice:
 
     Attributes:
         text: The text.
-        origin: `operator` for the task, a steer or an answer; `harness` otherwise.
+        origin: Who delivered the notice. A local summary is a `restart`.
+        operator_words: Verbatim inputs within a rendered steer, answer notice or restart.
     """
 
     text: str
-    origin: Literal["harness", "operator"] = "harness"
+    origin: Literal["harness", "operator", "restart"] = "harness"
+    operator_words: tuple[str, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -100,6 +102,23 @@ class AssistantMessage:
 
     raw_content: tuple[Any, ...]
     tool_uses: tuple[ToolUse, ...]
+
+    def without_thinking(self) -> tuple[AssistantMessage, int]:
+        """Remove thinking and redacted thinking without changing any tool calls.
+
+        Returns:
+            The stripped reply and the number of characters removed.
+        """
+        kept: list[Any] = []
+        removed = 0
+        for b in self.raw_content:
+            if isinstance(b, dict) and b.get("type") in ("thinking", "redacted_thinking"):
+                removed += sum(len(str(v)) for k, v in b.items() if k != "type" and v is not None)
+            else:
+                kept.append(b)
+        if len(kept) == len(self.raw_content):
+            return self, 0
+        return AssistantMessage(tuple(kept), self.tool_uses), removed
 
     def is_substantive(self) -> bool:
         """Return whether the message carries visible text or a tool call.
@@ -315,16 +334,23 @@ class Conversation:
             and first.raw_content[0].get("type") == "compaction"
         ):
             text = notice(str(first.raw_content[0].get("content", "")))
-            self._messages[0] = UserMessage(items=(Notice(text),))
+            self._messages[0] = UserMessage(items=(Notice(text, "restart"),))
 
-    def notice(self, text: str, *, origin: Literal["harness", "operator"] = "harness") -> None:
+    def notice(
+        self,
+        text: str,
+        *,
+        origin: Literal["harness", "operator"] = "harness",
+        operator_words: tuple[str, ...] = (),
+    ) -> None:
         """Append harness or operator text as its own user message.
 
         Args:
             text: The notice.
             origin: `operator` for the task, a steer or an answer.
+            operator_words: The operator input without its harness framing.
         """
-        self._append_notices((Notice(text, origin),))
+        self._append_notices((Notice(text, origin, operator_words),))
 
     @property
     def initiator(self) -> str:
@@ -358,30 +384,38 @@ class Conversation:
             self._messages.pop()
             self._deliver_restart_notice()
 
-    def restart(self, summary_text: str, keep: Sequence[Message] = (), *, task: str = "") -> None:
-        """Replace everything after the initial message with a summary notice and a tail.
-
-        Marks outside the kept messages are dropped with their blocks.
+    def restart(
+        self,
+        summary_text: str,
+        keep: Sequence[Message] = (),
+        *,
+        quotes: tuple[str, ...] = (),
+        endpoint_task: str | None = None,
+    ) -> None:
+        """Replace the history with a restart notice and paired messages.
 
         Args:
-            summary_text: The restart notice.
-            task: The original task when replacing an earlier endpoint summary.
-            keep: The most recent messages, already balanced. A tail leading with
-                tool results would answer a message the restart summarised away.
+            summary_text: The rendered restart, including any quoted operator words.
+            keep: The turns and pending inputs to replay.
+            quotes: The quotes in the notice, for selection on a subsequent restart.
+            endpoint_task: Repeat the opening task on a failed endpoint summary.
 
         Raises:
-            ValueError: The first message is a tool_use message, or the tail leads with
-                tool results.
+            ValueError: The kept tail starts with results whose calls are missing.
         """
-        first = self._messages[0]
-        if isinstance(first, AssistantMessage) and first.tool_uses:
-            raise ValueError("conversation invariant: cannot restart from a tool_use message")
         if keep and isinstance(keep[0], UserMessage) and _result_ids(keep[0]):
             raise ValueError("conversation invariant: a kept tail cannot lead with tool_results")
-        if isinstance(first, AssistantMessage) and task:
-            first = UserMessage(items=(Notice(task, "operator"),))
-        self._messages[:] = [first, UserMessage(items=(Notice(summary_text),)), *keep]
-        self._marks = [m for m in self._marks if m[0] == 0]
+        notice = UserMessage(items=(Notice(summary_text, "restart", quotes),))
+        opening: list[Message] = []
+        if endpoint_task is not None:
+            first = self._messages[0]
+            opening.append(
+                first
+                if isinstance(first, UserMessage)
+                else UserMessage((Notice(endpoint_task, "operator"),))
+            )
+        self._messages[:] = [*opening, notice, *keep]
+        self._marks = [m for m in self._marks if opening and m[0] == 0]
 
     def strip_thinking(self, message_idx: int) -> int:
         """Drop the thinking blocks from one assistant message, in place.
@@ -400,23 +434,7 @@ class Conversation:
         message = self._messages[message_idx]
         if not isinstance(message, AssistantMessage):
             raise ValueError("strip_thinking targets an assistant message")
-        dropped = [
-            b
-            for b in message.raw_content
-            if isinstance(b, dict) and b.get("type") in ("thinking", "redacted_thinking")
-        ]
-        if not dropped:
-            return 0
-        kept = tuple(b for b in message.raw_content if b not in dropped)
-        removed = sum(
-            len(v if isinstance(v, str) else str(v))
-            for b in dropped
-            for k, v in b.items()
-            if k != "type" and v is not None
-        )
-        self._messages[message_idx] = AssistantMessage(
-            raw_content=kept, tool_uses=message.tool_uses
-        )
+        self._messages[message_idx], removed = message.without_thinking()
         return removed
 
     def set_result_content(
@@ -506,7 +524,7 @@ class Conversation:
         """Return the provider or snapshot message list.
 
         Args:
-            snapshot: Include notice origins for resume.
+            snapshot: Include notice origins and operator words for resume.
 
         Returns:
             Fresh dicts for user messages with `cache_control` stamped at the mark
@@ -546,6 +564,8 @@ class Conversation:
                     block = {"type": "text", "text": item.text}
                     if snapshot and item.origin != "harness":
                         block["origin"] = item.origin
+                    if snapshot and item.operator_words:
+                        block["operator_words"] = list(item.operator_words)
                 if (m_idx, i_idx) in marks:
                     block["cache_control"] = dict(_EPHEMERAL)
                 blocks.append(block)
@@ -644,13 +664,16 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
     keys = set(block) - {"cache_control"}
     if block.get("type") == "text":
         origin = block.get("origin", "harness")
+        words = block.get("operator_words", [])
         if (
-            keys - {"origin"} != {"type", "text"}
+            keys - {"origin", "operator_words"} != {"type", "text"}
             or not isinstance(block["text"], str)
-            or origin not in ("harness", "operator")
+            or origin not in ("harness", "operator", "restart")
+            or not isinstance(words, list)
+            or not all(isinstance(w, str) for w in words)
         ):
             raise ValueError(f"malformed conversation: {where} is not a plain text block")
-        return Notice(text=block["text"], origin=origin)
+        return Notice(text=block["text"], origin=origin, operator_words=tuple(words))
     if block.get("type") == "tool_result":
         if (
             keys != {"type", "tool_use_id", "content"}

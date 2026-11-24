@@ -109,6 +109,7 @@ def context_restart_notice(
     pins: Sequence[str] = (),
     decisions: str = "",
     *,
+    operator_messages: Sequence[str] = (),
     dag_available: bool = True,
     verification: str = "",
     metric: str = "",
@@ -121,6 +122,7 @@ def context_restart_notice(
         mode: The session's mode; the DAG paragraph appears only for run and plan.
         pins: The operator's pinned instructions, rendered as standing orders.
         decisions: The recorded operator rulings, or "".
+        operator_messages: Retained operator words older than the kept turns.
         dag_available: The run has a curator, so `list_tasks` exists.
         endpoint_task: The task to repeat after a signed summary instead of adding prose.
         verification: The verify fact (`VerifyVerdict.fact`), or "" for a run without a gate.
@@ -146,6 +148,7 @@ def context_restart_notice(
             if endpoint_task is None
             else "Use list_tasks to check the current task statuses."
         )
+    parts.extend(f"Operator message:\n{text}" for text in operator_messages)
     if block := pinned_block(pins):
         parts.append(block)
     if decisions.strip():

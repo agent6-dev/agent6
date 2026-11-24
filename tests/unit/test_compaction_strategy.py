@@ -11,7 +11,7 @@ from tests.unit import test_loop_wire_golden as scripted
 
 
 class KeepLastExchange:
-    """Keep the task and the newest complete tool exchange."""
+    """Keep the newest complete tool exchange."""
 
     def __init__(self) -> None:
         self.turns = 0
@@ -23,7 +23,7 @@ class KeepLastExchange:
             return False
         context.check_stop()
         context.conversation.restart(
-            context.restart_notice() + "Kept the newest exchange.", keep=messages[-2:]
+            context.restart_notice(()) + "Kept the newest exchange.", keep=messages[-2:]
         )
         return True
 
@@ -55,7 +55,7 @@ def test_standalone_strategy_replaces_the_history_the_worker_receives(
     )
     assert result.completed and keep.turns == len(worker.captured) == 3
     last = json.loads(worker.captured[-1]["messages"])
-    assert "TASK: keep the newest exchange" in str(last[0])
+    assert "TASK: keep the newest exchange" not in str(last)
     assert "Kept the newest exchange." in str(last)
     assert "tu-1a" not in str(last) and "tu-1b" not in str(last)
     assert last[-2]["content"][0]["id"] == last[-1]["content"][0]["tool_use_id"] == "tu-3"

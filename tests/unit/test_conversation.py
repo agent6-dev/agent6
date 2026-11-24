@@ -257,19 +257,17 @@ def test_set_result_content_rewrites_in_place() -> None:
     assert isinstance(item, loop_conversation.ToolResultItem) and item.for_call.name == "read_file"
 
 
-def test_restart_keeps_the_first_message_and_its_marks() -> None:
+def test_restart_discards_unselected_messages_and_their_marks() -> None:
     conv = loop_conversation.Conversation()
     conv.notice("TASK")
     conv.roll_cache_marks()  # marks the task message
     conv.assistant([_tool_use_block("t1")])
     _result(conv, "x")
     conv.restart("[restart] summary")
-    wire = conv.to_wire()
-    assert [m["content"][0].get("text", m["content"][0].get("type")) for m in wire] == [
-        "TASK",
-        "[restart] summary",
+    assert conv.to_wire() == [
+        {"role": "user", "content": [{"type": "text", "text": "[restart] summary"}]}
     ]
-    assert _marked(wire) == [(0, 0)]  # the kept message's mark survives; the rest are gone
+    assert not _marked(conv.to_wire())
 
 
 # --- rolling cache marks (ported from the _cache module tests) --------------
@@ -362,7 +360,7 @@ def test_restart_then_roll_starts_a_fresh_pair() -> None:
     conv.roll_cache_marks()
     conv.restart("[context restart] summary")
     conv.roll_cache_marks()
-    assert _marked(conv.to_wire()) == [(0, 0), (1, 0)]
+    assert _marked(conv.to_wire()) == [(0, 0)]
 
 
 def test_wire_leads_with_tool_results_never_notice_text() -> None:
@@ -418,12 +416,12 @@ def test_restart_with_kept_tail_preserves_recent_messages_verbatim() -> None:
     tail = conv.messages[-2:]  # the t2 call + its result: a balanced tail
     conv.restart("[restart] summary", keep=tail)
     messages = conv.messages
-    assert len(messages) == 4  # task, summary, t2 call, t2 result
+    assert len(messages) == 3  # summary, t2 call, t2 result
     assert (
-        isinstance(messages[2], loop_conversation.AssistantMessage)
-        and messages[2].tool_uses[0].id == "t2"
+        isinstance(messages[1], loop_conversation.AssistantMessage)
+        and messages[1].tool_uses[0].id == "t2"
     )
-    last = messages[3]
+    last = messages[2]
     assert isinstance(last, loop_conversation.UserMessage)
     item = last.items[0]
     assert isinstance(item, loop_conversation.ToolResultItem) and item.content == "fresh file body"
