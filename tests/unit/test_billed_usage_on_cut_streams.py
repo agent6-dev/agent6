@@ -539,6 +539,38 @@ def test_anthropic_records_a_completed_malformed_stream() -> None:
     assert (snap.input_total, snap.output_total) == (1_000, 20)
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"content": 5, "stop_reason": "end_turn"},
+        {"content": [{"type": "text", "text": "x"}]},
+    ],
+    ids=["content", "no-stop-reason"],
+)
+def test_anthropic_records_a_malformed_json_reply(body: dict[str, Any]) -> None:
+    """The usage-only parse of a failed Messages body had no stop reason and booked nothing."""
+    reply = httpx2.Response(
+        status_code=200,
+        request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages"),
+        content=json.dumps(
+            {**body, "usage": {"input_tokens": 1_000, "output_tokens": 20}}
+        ).encode(),
+        headers={"content-type": "application/json"},
+    )
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
+    provider = AnthropicProvider(
+        api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
+    )
+    with (
+        mock.patch("agent6.providers.transport.http_post", return_value=reply),
+        pytest.raises(ProviderError, match="Anthropic response") as exc,
+    ):
+        provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
+    snap = budget.snapshot()
+    assert (snap.input_total, snap.output_total) == (1_000, 20)
+    assert exc.value.usage is not None and exc.value.usage.input_tokens == 1_000
+
+
 def test_openai_meters_a_completed_stream_once(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

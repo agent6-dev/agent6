@@ -604,7 +604,8 @@ class ProviderCall:
             usage = data.get("usage")
             if isinstance(usage, dict) and usage:
                 try:
-                    billed = self.parse({"usage": usage})
+                    # The Messages parser requires a stop reason; the others ignore the key.
+                    billed = self.parse({"usage": usage, "stop_reason": "error"})
                     if self.budget is not None and billed.cost_usd is None:
                         self.require_metered(data)
                 except (provider_types.ProviderError, *provider_types.WIRE_SHAPE_ERRORS):
