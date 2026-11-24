@@ -36,9 +36,8 @@ from typing import Any, Literal
 from agent6 import kinds, media
 from agent6.harness import nudges
 
-NoticeOrigin = Literal[
-    "harness", "operator", "model", "panel", "plan", "restart", "contract", "reply_count"
-]
+TaskSource = Literal["harness", "operator", "model", "panel"]
+NoticeOrigin = TaskSource | Literal["plan", "restart", "contract", "reply_count"]
 
 _EPHEMERAL = {"type": "ephemeral"}
 

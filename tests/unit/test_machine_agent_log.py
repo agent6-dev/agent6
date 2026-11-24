@@ -23,6 +23,7 @@ from agent6.machine import journal as machine_journal
 from agent6.providers import ProviderResponse
 from agent6.sessions import event_log, ipc, journal, process
 from agent6.viewmodel.machine import state as machine_state
+from tests.unit import test_compaction_writers as writers
 
 JUDGE = """
 machine = "judge"
@@ -117,6 +118,8 @@ def _run(
     log: pathlib.Path,
     request: AgentRequest,
     prov: _Finishes | None = None,
+    *,
+    compaction: dict[str, int] | None = None,
 ) -> _Finishes:
     """Run one execution through `run_one` with the real harness, logging to `log`.
 
@@ -127,6 +130,7 @@ def _run(
         log: The execution's log.
         request: The execution's request.
         prov: The provider; by default one that finishes at once.
+        compaction: Local restart settings for the state.
 
     Returns:
         The provider, holding the refusals it read.
@@ -149,6 +153,7 @@ def _run(
         cwd=repo,
         root=repo,
         overlay={
+            "compaction": compaction or {},
             "sandbox": {"isolation": "none"},
             "models": {"default": {"model": "p/m"}},
             "providers": {
@@ -166,6 +171,59 @@ def _run(
     )
     assert agent.run_one(req).reason == "finish_session"
     return prov
+
+
+@pytest.mark.parametrize("authoring", [False, True])
+def test_only_the_authoring_request_contributes_operator_words(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, authoring: bool
+) -> None:
+    """A rendered state prompt is not an operator message outside the kept turns."""
+    restarts: list[str] = []
+
+    class Compacts(_Finishes):
+        turns = 0
+
+        def call(self, **kw: Any) -> ProviderResponse:
+            messages = kw["messages"]
+            if isinstance(messages[-1]["content"], str):
+                return writers.response("Ready.")
+            first = messages[0]["content"][0]["text"]
+            if first.startswith("[harness context restart]"):
+                restarts.append(first)
+                return super().call(**kw)
+            self.turns += 1
+            assert self.turns <= 3
+            call = {"type": "tool_use", "id": str(self.turns), "name": "list_dir", "input": {}}
+            return writers.response(
+                "", tool_uses=(call,), stop_reason="tool_use", raw={"content": [call]}
+            )
+
+    owner = tmp_path / "machines" / "judge"
+    owner.mkdir(parents=True)
+    log = owner / "logs.jsonl" if authoring else owner / "states" / "0000-look" / "logs.jsonl"
+    request = AgentRequest(
+        prompt="Rendered request with machine output.",
+        operator_task="Author a judge." if authoring else None,
+        state_name="" if authoring else "look",
+        timeout_s=60,
+    )
+    _run(
+        tmp_path,
+        monkeypatch,
+        owner,
+        log,
+        request,
+        Compacts(None),
+        compaction={
+            "keep_recent_turns": 0,
+            "keep_recent_chars": 500,
+            "drop_at_chars": 1000,
+            "summarise_at_chars": 2000,
+        },
+    )
+    (notice,) = restarts
+    assert "Rendered request" not in notice
+    assert ("Operator message:\nAuthor a judge." in notice) is authoring
 
 
 def _types(log: pathlib.Path) -> list[str]:

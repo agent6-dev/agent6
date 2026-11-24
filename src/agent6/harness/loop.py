@@ -24,7 +24,6 @@ import pydantic
 
 from agent6 import budget as agent6_budget
 from agent6 import (
-    child_records,
     directive,
     errors,
     kinds,
@@ -164,7 +163,7 @@ class Harness:
     dispatcher: dispatch.ToolDispatcher
     logger: Callable[[str], None] = dataclasses.field(default=print)
     events: event_log.EventSink | None = None
-    task_source: child_records.DispatchSource = "operator"
+    task_source: loop_conversation.TaskSource = "operator"
     settings: tuple[journal.SettingObservation, ...] = ()
     curator: graph_curator.GraphCurator | None = None
     budget: agent6_budget.BudgetTracker | None = None
