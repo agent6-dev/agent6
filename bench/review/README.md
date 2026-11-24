@@ -5,6 +5,8 @@ The `review` preset enables a three-reviewer `finish` panel.
 The configuration reference documents its triggers, roster and blocking rules.
 `agent6 ask "/review <range>"` is a separate markdown review, not a structured panel.
 
+[Recorded review replay](replay.md) compares a panel reviewer's first reply under two system prompts.
+
 This file records why the panel does not reintroduce the false-blocking that got
 the pre-0.0.4 `reviewer.py` deleted, and the runs behind enabling it.
 
