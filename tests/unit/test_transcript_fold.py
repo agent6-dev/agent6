@@ -1302,7 +1302,7 @@ def test_media_result_renders_metadata_on_shared_and_acp_surfaces() -> None:
         text for line in transcript_style.item_lines(item, detail="expanded") for text, _ in line
     )
     assert "image: page.png, 2 KiB" in rendered
-    assert "image: page.png, 2 KiB" in str(updates._tool_content(item))  # pyright: ignore[reportPrivateUsage]
+    assert "image: page.png, 2 KiB" in str(updates._tool_content(item))
 
 
 def test_child_activity_names_the_child_and_the_merge_result() -> None:

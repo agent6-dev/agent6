@@ -83,6 +83,6 @@ def test_the_child_config_reads_back_the_selected_settings(tmp_path: pathlib.Pat
 
 
 def test_the_parallel_completer_offers_role_names_before_routes() -> None:
-    offered = completers._complete_parallel_models("rev")  # pyright: ignore[reportPrivateUsage]
+    offered = completers._complete_parallel_models("rev")
     assert offered[:1] == ["reviewer"]
-    assert completers._complete_parallel_models("o/x,wor")[:1] == ["o/x,worker"]  # pyright: ignore[reportPrivateUsage]
+    assert completers._complete_parallel_models("o/x,wor")[:1] == ["o/x,worker"]

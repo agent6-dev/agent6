@@ -177,7 +177,7 @@ def test_secret_completion_offers_configured_and_saved_header_names_only(
     path.write_text(path.read_text() + '[telemetry.headers]\nX-Saved = "hidden-header-value"\n')
     for verb in ("set", "unset"):
         args = argparse.Namespace(config_command=verb, secret=True, config_after=[overlay])
-        keys = completers._complete_config_keys("", parsed_args=args)  # pyright: ignore[reportPrivateUsage]
+        keys = completers._complete_config_keys("", parsed_args=args)
         assert keys == [
             'telemetry.headers."X.Scope"',
             "telemetry.headers.Authorization",
@@ -185,7 +185,7 @@ def test_secret_completion_offers_configured_and_saved_header_names_only(
         ]
         assert completers._complete_config_keys("telemetry.headers.A", parsed_args=args) == [
             "telemetry.headers.Authorization"
-        ]  # pyright: ignore[reportPrivateUsage]
+        ]
         for key in ("telemetry.headers.Authorization", "sandbox.isolation"):
             args.key = key
-            assert completers._complete_config_values("", args) == []  # pyright: ignore[reportPrivateUsage]
+            assert completers._complete_config_values("", args) == []

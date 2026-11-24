@@ -36,7 +36,7 @@ def _warned(isolation: str, cfg: Config, root: pathlib.Path) -> list[str]:
     )
     lines: list[str] = []
     reporter = app_reporter.Reporter(out=lines.append, err=lines.append)
-    confine.warn_sandbox_gaps(isolation, env, cfg, root=root, reporter=reporter)  # pyright: ignore[reportArgumentType]
+    confine.warn_sandbox_gaps(isolation, env, cfg, root=root, reporter=reporter)  # pyrefly: ignore[bad-argument-type]
     return lines
 
 
@@ -65,7 +65,7 @@ def test_the_builder_creates_and_grants_the_persistent_home(
     """
     home = paths.jail_cache_home(tmp_path)
     assert not home.exists()
-    policy = policy_module.jail_policy(tmp_path, cfg, isolation, ("true",))  # pyright: ignore[reportArgumentType]
+    policy = policy_module.jail_policy(tmp_path, cfg, isolation, ("true",))  # pyrefly: ignore[bad-argument-type]
     assert dict(policy.env)["HOME"] == str(home)
     assert home in policy.extra_rw_paths
     assert home.is_dir() and not home.is_symlink()
@@ -182,13 +182,13 @@ def test_an_explicit_tmp_home_refuses_where_there_is_no_private_tmp(
 ) -> None:
     """`home = "tmp"` needs `full`'s private tmpfs: it refuses elsewhere, while `auto` degrades."""
     tmp = Config(sandbox=SandboxConfig(home="tmp"))
-    msg = confine.check_jail_home(tmp, isolation, tmp_path)  # pyright: ignore[reportArgumentType]
+    msg = confine.check_jail_home(tmp, isolation, tmp_path)  # pyrefly: ignore[bad-argument-type]
     assert msg is not None
     assert "requires sandbox.isolation = 'full'" in msg
     assert f"resolved to '{isolation}'" in msg
     assert "sandbox.home = 'auto'" in msg
-    assert confine.config_refusal(tmp, isolation, tmp_path) == msg  # pyright: ignore[reportArgumentType]
-    assert confine.config_refusal(Config(), isolation, tmp_path) is None  # pyright: ignore[reportArgumentType]
+    assert confine.config_refusal(tmp, isolation, tmp_path) == msg  # pyrefly: ignore[bad-argument-type]
+    assert confine.config_refusal(Config(), isolation, tmp_path) is None  # pyrefly: ignore[bad-argument-type]
     assert confine.config_refusal(tmp, "full", tmp_path) is None
 
 
@@ -207,10 +207,10 @@ def test_no_isolation_gives_the_operators_own_home(tmp_path: pathlib.Path) -> No
 def test_an_explicit_host_home_refuses_under_a_jail(tmp_path: pathlib.Path, isolation: str) -> None:
     """`home = "host"` is `none`'s value: a jail has no place for the operator's HOME."""
     host = Config(sandbox=SandboxConfig(home="host"))
-    msg = confine.check_jail_home(host, isolation, tmp_path)  # pyright: ignore[reportArgumentType]
+    msg = confine.check_jail_home(host, isolation, tmp_path)  # pyrefly: ignore[bad-argument-type]
     assert msg is not None and "requires sandbox.isolation = 'none'" in msg
     assert f"resolved to '{isolation}'" in msg
-    assert confine.config_refusal(host, isolation, tmp_path) == msg  # pyright: ignore[reportArgumentType]
+    assert confine.config_refusal(host, isolation, tmp_path) == msg  # pyrefly: ignore[bad-argument-type]
     assert confine.check_jail_home(host, "none", tmp_path) is None
 
 

@@ -99,7 +99,7 @@ def test_cycle_check_survives_dangling_depends_on(tmp_path: pathlib.Path) -> Non
     a = c.add_subtask(models.AddSubtaskIntent(parent_id=None, draft=_draft("a")))
     b = c.add_subtask(models.AddSubtaskIntent(parent_id=None, draft=_draft("b")))
     # add_dependency rejects an unknown target, so the in-memory node is corrupted directly.
-    c._nodes[b.id] = b.model_copy(update={"depends_on": ("ghost-id",)})  # pyright: ignore[reportPrivateUsage]
+    c._nodes[b.id] = b.model_copy(update={"depends_on": ("ghost-id",)})
     # add_dependency(a -> b) walks b's deps (incl. the ghost); must not raise KeyError.
     updated = c.add_dependency(models.AddDependencyIntent(id=a.id, depends_on=b.id))
     assert b.id in updated.depends_on

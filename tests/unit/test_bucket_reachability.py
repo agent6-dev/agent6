@@ -88,7 +88,7 @@ def test_the_repl_watch_reads_its_own_log(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The REPL watch reads its own log under asks/."""
-    from agent6.ui.cli import repl  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import repl
 
     state = paths.state_dir(tmp_path)
     _seed(state, "asks", "brave-oak-AAAAAA", mode="ask")
@@ -112,5 +112,5 @@ def test_the_mcp_tools_see_every_bucket(tmp_path: pathlib.Path) -> None:
     server = mcp_server.MCPServer(
         root=tmp_path, config=Config(), stdin=io.BytesIO(), stdout=io.BytesIO()
     )
-    listed = {s["session_id"] for s in server._h_list_sessions({})["sessions"]}  # pyright: ignore[reportPrivateUsage]
+    listed = {s["session_id"] for s in server._h_list_sessions({})["sessions"]}
     assert listed == {"brave-oak-AAAAAA", "quiet-fox-BBBBBB"}

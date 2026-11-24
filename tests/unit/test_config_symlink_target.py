@@ -53,7 +53,7 @@ def test_a_symlink_to_another_owner_refuses(
     foreign_resolved = foreign.resolve()
 
     def fake_stat(self: pathlib.Path, **kw: object) -> object:
-        return _Foreign() if self == foreign_resolved else real_stat(self, **kw)  # pyright: ignore[reportArgumentType]
+        return _Foreign() if self == foreign_resolved else real_stat(self, **kw)  # pyrefly: ignore[bad-argument-type]
 
     monkeypatch.setattr(pathlib.Path, "stat", fake_stat)
     with pytest.raises(errors.OperatorError, match="owned by uid 0"):

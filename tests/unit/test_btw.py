@@ -203,7 +203,7 @@ def test_a_btw_still_thinking_when_the_watcher_gives_up_is_said_so(
     logs = tmp_path / "run" / "logs.jsonl"
     logs.parent.mkdir()
 
-    ui_btw._watch(btw.BtwSession(id=d.name, dir=d, question="q"), event_log.EventSink(logs))  # pyright: ignore[reportPrivateUsage]
+    ui_btw._watch(btw.BtwSession(id=d.name, dir=d, question="q"), event_log.EventSink(logs))
 
     events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
     (answered,) = [e for e in events if e["type"] == "btw.answered"]

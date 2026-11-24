@@ -12,7 +12,7 @@ import pathlib
 import pytest
 
 from agent6.sessions import id, layout
-from agent6.ui.cli import common  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import common
 
 
 def test_the_cross_bucket_resolver_says_session(

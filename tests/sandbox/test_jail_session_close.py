@@ -80,7 +80,7 @@ def test_close_drains_a_response_interrupted_before_it_was_read(
     session = jail_session.JailSession.open(
         kinds.JailPolicy(cwd=tmp_path, argv=(), isolation=isolation, network="host")
     )
-    proc = session._proc  # pyright: ignore[reportPrivateUsage]
+    proc = session._proc
 
     def interrupt_response() -> bool:
         assert proc.stdout is not None

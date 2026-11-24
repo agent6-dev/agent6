@@ -565,7 +565,7 @@ def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
         is False
     )
 
-    from agent6.ui.cli import sessions_show  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import sessions_show
 
     assert sessions_show._cmd_status(session_id) == 0
     out = capsys.readouterr().out
@@ -729,7 +729,7 @@ def test_show_names_no_commit_for_a_fork_sitting_on_its_base(
         encoding="utf-8",
     )
 
-    from agent6.ui.cli import sessions_show  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import sessions_show
 
     assert sessions_show._cmd_status(session_id) == 0
     out = capsys.readouterr().out

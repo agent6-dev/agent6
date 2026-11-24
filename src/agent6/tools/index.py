@@ -523,7 +523,7 @@ class SymbolIndex:
         if def_src is None:
             return None
         try:
-            lang = tree_sitter_language_pack.get_language(lang_name)  # pyright: ignore[reportArgumentType]
+            lang = tree_sitter_language_pack.get_language(lang_name)
         except Exception:  # unknown lang name -> skip
             return None
         parser = tree_sitter.Parser(lang)

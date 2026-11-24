@@ -152,7 +152,7 @@ def test_record_scrubs_credential_values_from_the_bodies(tmp_path: pathlib.Path)
 
 
 def test_redact_headers_unit() -> None:
-    out = provider_types._redact_headers(  # pyright: ignore[reportPrivateUsage]
+    out = provider_types._redact_headers(
         {
             "x-api-key": "secret",
             "Authorization": "Bearer t",

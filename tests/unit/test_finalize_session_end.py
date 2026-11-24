@@ -1452,7 +1452,7 @@ def test_the_left_out_list_prints_names_on_one_line(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A name holding a newline is printed quoted, so it cannot forge a line of the report."""
-    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
+    from agent6.app import finalize
 
     repo = tmp_path / "repo"
     repo.mkdir()

@@ -84,7 +84,7 @@ def test_config_page_view_search_filter_help(repo: pathlib.Path) -> None:
 
             # Search narrows to matching keys.
             screen.query_one("#search", widgets.Input).value = "run_commands"
-            screen._refresh()  # pyright: ignore[reportPrivateUsage]
+            screen._refresh()
             await pilot.pause()
             narrowed = _row_total(screen)
             assert 0 < narrowed < total
@@ -192,7 +192,7 @@ def test_config_page_edit_persists(repo: pathlib.Path) -> None:
             assert isinstance(modal, config_forms.EditModal)
             # Fixed choices have meanings and no free-text row.
             field = modal.query_one("#edit-value", forms.ChoiceField)
-            assert field._custom_row == -1  # pyright: ignore[reportPrivateUsage]
+            assert field._custom_row == -1
             assert "Allow command tools and verification" in field.render().plain
             assert not modal.query(widgets.Input)
             assert field.value == "allow"
@@ -317,7 +317,7 @@ def test_fixed_choice_has_no_custom_entry(repo: pathlib.Path) -> None:
                 await pilot.press(ch)
             await pilot.pause()
             assert field.value == "allow"
-            assert modal._new_value() == "allow"  # pyright: ignore[reportPrivateUsage]
+            assert modal._new_value() == "allow"
 
     asyncio.run(scenario())
 
@@ -506,7 +506,7 @@ def test_scalar_model_editor_saves_one_key_and_preserves_siblings(
             await pilot.pause()
             assert app.screen is modal
             assert (repo_cfg if to_repo else cfg).read_text() == before
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [str(n.message) for n in app._notifications]
             assert any("model write refused for this test" in note for note in notes)
             monkeypatch.setattr(write, "set_config_leaves", real_write)
             await pilot.press("enter")
@@ -704,13 +704,13 @@ def test_edit_modal_up_at_top_is_a_hard_stop(repo: pathlib.Path) -> None:
             modal = app.screen
             assert isinstance(modal, config_forms.EditModal)
             field = modal.query_one("#edit-value", forms.ChoiceField)
-            assert modal.focused is field and field._cursor == 0  # pyright: ignore[reportPrivateUsage]
+            assert modal.focused is field and field._cursor == 0
             await pilot.press("up")  # at the top edge
             await pilot.pause()
             assert modal.focused is field  # stayed put (didn't escape to the scroll box)
             await pilot.press("down")  # highlight still moves afterwards
             await pilot.pause()
-            assert modal.focused is field and field._cursor == 1  # pyright: ignore[reportPrivateUsage]
+            assert modal.focused is field and field._cursor == 1
 
     asyncio.run(scenario())
 
@@ -740,7 +740,7 @@ def test_q_backs_out_from_config_but_types_in_search(repo: pathlib.Path) -> None
             assert not exits
 
             # Out on a table, q backs out (dismiss) instead of quitting.
-            screen._cancel_search()  # pyright: ignore[reportPrivateUsage]
+            screen._cancel_search()
             screen.query_one("#tbl-sandbox", widgets.DataTable).focus()
             await pilot.pause()
             await pilot.press("q")
@@ -793,7 +793,7 @@ def test_menu_bar_opens_and_dispatches(repo: pathlib.Path) -> None:
             assert "search" in ids and "toggle_modified" in ids
 
             # Pick "Modified only" and follow the whole dispatch chain to action_toggle_modified.
-            assert screen._modified_only is False  # pyright: ignore[reportPrivateUsage]
+            assert screen._modified_only is False
             idx = next(
                 i
                 for i in range(dd.option_count)
@@ -802,7 +802,7 @@ def test_menu_bar_opens_and_dispatches(repo: pathlib.Path) -> None:
             dd.highlighted = idx
             await pilot.press("enter")
             await pilot.pause()
-            assert screen._modified_only is True  # pyright: ignore[reportPrivateUsage]
+            assert screen._modified_only is True
 
     asyncio.run(scenario())
 
@@ -995,7 +995,7 @@ def test_esc_clears_filter_before_closing(repo: pathlib.Path) -> None:
             await pilot.pause()
             assert screen.focused is search
             search.value = "run_commands"
-            screen._refresh()  # pyright: ignore[reportPrivateUsage]
+            screen._refresh()
             await pilot.pause()
             await pilot.press("escape")
             await pilot.pause()
@@ -1247,7 +1247,7 @@ def test_provider_form_uses_the_schema_name_refusal(repo: pathlib.Path, name: st
                 f"provider name {name!r} is not a valid TOML bare key"
                 " (use only ASCII letters, digits, '-', '_')."
             )
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [str(n.message) for n in app._notifications]
             assert any(expected in note for note in notes), notes
             assert app.screen is modal
             assert paths.global_config_path().read_text() == before
@@ -1379,7 +1379,7 @@ def test_remove_entry_without_an_entry_row(repo: pathlib.Path) -> None:
             screen.action_remove_entry()
             await pilot.pause()
             assert app.screen is screen
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [str(n.message) for n in app._notifications]
             assert notes[-1] == (
                 "Select a row of a provider, MCP server, skill or the reviewer roster first."
             )
@@ -1408,7 +1408,7 @@ def test_skill_form_reports_a_repo_override_of_its_global_write(repo: pathlib.Pa
             modal.query_one("#entry-target", forms.ChoiceField).select_value("global config")
             modal.action_add()
             await pilot.pause()
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [str(n.message) for n in app._notifications]
             assert any("note: the repo config overrides skills.state.alpha;" in n for n in notes)
             table = screen.query_one("#tbl-skills", widgets.DataTable)
             row = next(
@@ -1796,7 +1796,7 @@ def test_unset_names_the_layer_instead_of_claiming_the_default(repo: pathlib.Pat
             screen.action_reset()
             await pilot.pause()
             assert layer.load_effective(repo).config.sandbox.run_commands == "allow"
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [str(n.message) for n in app._notifications]
             assert notes[-1] == "Unset sandbox.run_commands from repo config"
 
     asyncio.run(scenario())
@@ -1828,7 +1828,7 @@ def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: pathlib.Path) 
             screen._current_setting = lambda: setting  # type: ignore[method-assign]
             screen.action_reset()
             await pilot.pause()
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [str(n.message) for n in app._notifications]
             assert notes, "no notification fired"
             assert "already at its default" not in notes[-1]
             assert "preset" in notes[-1]
@@ -1860,7 +1860,7 @@ def test_reset_on_a_flag_sourced_setting_names_the_flag_layer(
             screen._current_setting = lambda: setting  # type: ignore[method-assign]
             screen.action_reset()
             await pilot.pause()
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [str(n.message) for n in app._notifications]
             assert notes, "no notification fired"
             assert "preset" not in notes[-1]
             assert "flag" in notes[-1]
@@ -1890,7 +1890,7 @@ def test_reload_on_an_invalid_on_disk_config_keeps_the_last_good_view(repo: path
             await pilot.pause()
             assert isinstance(app.screen, config_page.ConfigScreen)  # still alive
             assert _row_total(screen) == baseline  # last-good view retained
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [str(n.message) for n in app._notifications]
             assert any("config fix" in m for m in notes), notes
             assert "Config reloaded." not in notes
             # Model suggestions use the last-good config too, never re-reading the invalid file.
@@ -1952,7 +1952,7 @@ def test_the_setting_column_fits_the_longest_key(repo: pathlib.Path) -> None:
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, config_page.ConfigScreen)
-            view = screen._view  # pyright: ignore[reportPrivateUsage]
+            view = screen._view
             assert view is not None
             longest = max(len(s.key.split(".", 1)[1]) for s in view.settings if "." in s.key)
             assert longest > 26  # the fixture's provider keys make the old width bite

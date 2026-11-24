@@ -78,12 +78,12 @@ def test_a_nonconforming_finish_is_refused_with_the_problems() -> None:
     wf = _wf(validator)
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _finishing_turn(None)
-    ctx = wf._turn_context(state, turn=3, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=3, execution_start=1)
     refusal = finish_gates.finish_contract(turn, state, ctx)
     assert refusal is not None
     assert isinstance(refusal.event, journal.FinishRefusedContract)
     assert refusal.event.turn == 3 and refusal.event.problems
-    wf._turn_finish_gates(state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
+    wf._turn_finish_gates(state, turn, ctx)
     assert turn.finish is None
     notices = [r.text for r in turn.tool_results if isinstance(r, loop_conversation.Notice)]
     assert any("finish_session refused" in n and "verdict" in n for n in notices)

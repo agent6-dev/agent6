@@ -36,13 +36,9 @@ def test_it_says_the_skills_could_not_be_read(
 
     with pytest.raises(errors.OperatorError, match="could not read the installed skills") as exc:
         if verb == "enable":
-            skills_cmds._cmd_skills_enable(  # pyright: ignore[reportPrivateUsage]
-                "thinking-hard", always=False, repo=False
-            )
+            skills_cmds._cmd_skills_enable("thinking-hard", always=False, repo=False)
         else:
-            skills_cmds._cmd_skills_disable(  # pyright: ignore[reportPrivateUsage]
-                "thinking-hard", repo=False
-            )
+            skills_cmds._cmd_skills_disable("thinking-hard", repo=False)
     assert "Permission denied" in str(exc.value)
     assert "installed: (none)" not in str(exc.value)
 

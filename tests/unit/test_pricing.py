@@ -11,7 +11,7 @@ import pytest
 
 from agent6 import config, kinds
 from agent6.config import provider_config
-from agent6.models import cache as models_cache  # pyright: ignore[reportPrivateUsage]
+from agent6.models import cache as models_cache
 from agent6.models import listing_store
 from agent6.models import pricing as models_pricing
 from tests import price_env

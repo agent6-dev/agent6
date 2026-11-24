@@ -75,7 +75,7 @@ def test_the_hub_footer_shows_children_only_on_a_group_and_keeps_logs_and_refres
             table = screen.query_one("#sessions", widgets.DataTable)
 
             async def select(name: str) -> None:
-                runs = screen._runs  # pyright: ignore[reportPrivateUsage]
+                runs = screen._runs
                 table.move_cursor(row=[rd.name for rd in runs].index(name))
                 await pilot.pause()
                 await pilot.pause()

@@ -540,7 +540,7 @@ def test_a_question_answered_from_another_front_end_closes_the_modal(
             await pilot.pause()
             assert "Which name?" not in app.export_screenshot().replace("&#160;", " ")
             assert not (tmp_path / "questions" / "question-1.answer").exists()
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [str(n.message) for n in app._notifications]
             assert notes == [ipc.ANSWERED_ELSEWHERE]
 
     asyncio.run(scenario())
@@ -564,7 +564,7 @@ def test_a_submit_on_a_question_answered_elsewhere_writes_nothing(tmp_path: path
             said.append(message)
 
     dispatcher = prompts.PromptDispatcher(
-        _App(),  # pyright: ignore[reportArgumentType]
+        _App(),  # pyrefly: ignore[bad-argument-type]
         answerable=lambda: True,
         lost="lost",
     )
@@ -1036,7 +1036,7 @@ def test_stop_now_aborts_via_bridge(
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "abort"
             assert ipc.steer_request_pending(tmp_path) and ipc.stop_request_pending(tmp_path)
             await app.workers.wait_for_complete()
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [str(n.message) for n in app._notifications]
             assert any("did not answer" in note for note in notes)
 
     asyncio.run(scenario())
@@ -1112,7 +1112,7 @@ def test_a_typed_stop_is_the_one_stop(
             app.submit_instruction("/stop")
             await app.workers.wait_for_complete()
             assert calls == [False]
-            notes = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [(str(n.message), n.severity) for n in app._notifications]
             assert (f"{tmp_path.name} stopped", "information") in notes
 
     async def finished() -> None:
@@ -1126,7 +1126,7 @@ def test_a_typed_stop_is_the_one_stop(
             app.submit_instruction("/stop")
             await pilot.pause()
             assert calls == [False]
-            notes = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [(str(n.message), n.severity) for n in app._notifications]
             assert ("nothing to stop: the session is not live", "warning") in notes
 
     asyncio.run(scenario())
@@ -1369,10 +1369,10 @@ def test_payload_literal_does_not_swallow_a_real_steer(tmp_path: pathlib.Path) -
             await pilot.pause()
             for _ in range(50):  # let the reader thread replay the existing log
                 await pilot.pause()
-            assert app._seen_steer == 0  # pyright: ignore[reportPrivateUsage]
+            assert app._seen_steer == 0
             assert app.state.steer_requests == 0
-            app._handle_event(_ev(type="steer.signalled", source="sigint"))  # pyright: ignore[reportPrivateUsage]
-            app._tick()  # pyright: ignore[reportPrivateUsage]
+            app._handle_event(_ev(type="steer.signalled", source="sigint"))
+            app._tick()
             bar = app._dash.query_one(composer.SteerInput)
             await _settle_focus(pilot, bar)
             assert app.focused is bar
@@ -1666,7 +1666,7 @@ def test_dashboard_heartbeat_ticks_while_active(tmp_path: pathlib.Path) -> None:
             await _show_dashboard(pilot)
 
             def advanced() -> bool:
-                app._tick()  # pyright: ignore[reportPrivateUsage]
+                app._tick()
                 return (
                     _seconds(str(app._dash.query_one("#stream-body", widgets.Static).render())) >= 1
                 )
@@ -1692,11 +1692,11 @@ def test_tick_survives_an_empty_screen_stack(tmp_path: pathlib.Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause()
             # Empty the stack only around the synchronous tick, so teardown still finds its screens.
-            stack = app._screen_stack  # pyright: ignore[reportPrivateUsage]
+            stack = app._screen_stack
             saved = list(stack)
             stack.clear()
-            app._seen_steer = -1  # pyright: ignore[reportPrivateUsage]
-            app._tick()  # pyright: ignore[reportPrivateUsage]
+            app._seen_steer = -1
+            app._tick()
             stack.extend(saved)
 
     asyncio.run(scenario())
@@ -1728,7 +1728,7 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: pathlib.Path) -> 
             await _show_dashboard(pilot)
 
             def rows() -> int:
-                app._tick()  # pyright: ignore[reportPrivateUsage]
+                app._tick()
                 return app._dash.query_one("#tools", widgets.DataTable).row_count
 
             # Wait through the reader thread's initial fold, not a fixed budget.
@@ -1844,7 +1844,7 @@ def test_the_hidden_detail_level_says_what_it_hides(tmp_path: pathlib.Path) -> N
         app = tui_app.Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
-            screen = app._conv  # pyright: ignore[reportPrivateUsage]
+            screen = app._conv
             screen._detail = "hidden"
             screen._reload()
             await pilot.pause()
@@ -1940,8 +1940,8 @@ def test_dashboard_does_not_call_a_dead_driverless_run_idle(
         async with app.run_test(size=(150, 40)) as pilot:
             await _show_dashboard(pilot)
             before = len(reads)
-            header = app._dash.query_one(dashboard_header.RunHeader)  # pyright: ignore[reportPrivateUsage]
-            lines = {header._start_actor() for _ in range(4)}  # pyright: ignore[reportPrivateUsage]
+            header = app._dash.query_one(dashboard_header.RunHeader)
+            lines = {header._start_actor() for _ in range(4)}
             assert lines == {"(unknown)"}
             assert len(reads) - before <= 1
             top = str(app._dash.query_one("#top", widgets.Static).render())

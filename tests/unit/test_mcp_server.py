@@ -540,7 +540,7 @@ def test_every_published_schema_type_is_one_the_checker_validates(tmp_path: path
         return found
 
     server = _server(tmp_path, run_commands="allow")
-    for name, spec in server._tools.items():  # pyright: ignore[reportPrivateUsage]
+    for name, spec in server._tools.items():
         unchecked = _types(spec.input_schema) - checked_types
         assert not unchecked, f"{name} publishes type(s) {unchecked} the checker skips"
 
@@ -768,7 +768,7 @@ def test_serve_bounds_every_stdin_read(tmp_path: pathlib.Path) -> None:
     server._stdin = _RecordingStdin(msg.encode() + b"\n")  # type: ignore[attr-defined]
     server._stdout = io.BytesIO()  # type: ignore[attr-defined]
     server.serve()
-    assert sizes and all(s == mod._MAX_LINE_BYTES + 1 for s in sizes)  # pyright: ignore[reportPrivateUsage]
+    assert sizes and all(s == mod._MAX_LINE_BYTES + 1 for s in sizes)
 
 
 def test_serve_drains_oversized_line_and_recovers(
@@ -858,6 +858,6 @@ def test_the_server_runs_commands_through_a_prepared_session(tmp_path: pathlib.P
     """One jail session for the serving session, under the configured isolation (D38 g)."""
     server = _server(tmp_path, run_commands="allow")
     try:
-        assert server._dispatcher.execution_target is not None  # pyright: ignore[reportPrivateUsage]
+        assert server._dispatcher.execution_target is not None
     finally:
-        server._dispatcher.close()  # pyright: ignore[reportPrivateUsage]
+        server._dispatcher.close()

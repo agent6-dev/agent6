@@ -378,7 +378,7 @@ def test_unpack_serializes_a_writer_between_preflight_and_move(
     pack.pack(root)
     target.unlink()
     attempted = threading.Event()
-    acquire = portable._acquire_lock  # pyright: ignore[reportPrivateUsage]
+    acquire = portable._acquire_lock
 
     def signal_attempt(lock: pathlib.Path) -> int | None:
         if threading.current_thread() is not threading.main_thread():
@@ -396,7 +396,7 @@ def test_unpack_serializes_a_writer_between_preflight_and_move(
             with write.writing_config(target):
                 portable.atomic_write(target, "[compaction]\nsummary_max_tokens = 2000\n")
 
-    preflight = pack._preflight  # pyright: ignore[reportPrivateUsage]
+    preflight = pack._preflight
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future: concurrent.futures.Future[None] | None = None
 

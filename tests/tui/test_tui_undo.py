@@ -65,7 +65,7 @@ def test_a_live_undo_hands_both_resumes_to_the_fork_under_the_picks(
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.pause()
-            bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)
             assert app.continue_as == "fork-child-AAAAAA"
             assert bar.text == "name it better"
             assert "continue as fork-child-AAAAAA" in str(bar.border_title)
@@ -80,12 +80,12 @@ def test_a_live_undo_hands_both_resumes_to_the_fork_under_the_picks(
             # The dashboard's bar agrees.
             await pilot.press("ctrl+d")
             await pilot.pause()
-            app._heartbeat_at = 0.0  # pyright: ignore[reportPrivateUsage]
-            app._tick()  # pyright: ignore[reportPrivateUsage]
+            app._heartbeat_at = 0.0
+            app._tick()
             await pilot.pause()
-            dash_bar = app._dash.query_one("#dash-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
+            dash_bar = app._dash.query_one("#dash-input", composer.SteerInput)
             assert "continue as fork-child-AAAAAA" in str(dash_bar.border_title)
-            assert isinstance(app._dash.query_one("#top", widgets.Static), widgets.Static)  # pyright: ignore[reportPrivateUsage]
+            assert isinstance(app._dash.query_one("#top", widgets.Static), widgets.Static)
 
     asyncio.run(scenario())
 
@@ -136,12 +136,12 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
             await pilot.pause()
             app.submit_instruction("/undo")
             await pilot.pause()
-            bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)
             assert bar.text == "the message taken back"
             assert app.continue_as == "fork-child-BBBBBB"
             assert forked_under == [(tmp_path / "custom.toml",)]
             # The rewind notice reaches the screen, as it reaches a `run -i` terminal.
-            shown = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            shown = [str(n.message) for n in app._notifications]
             assert any("put 2 path(s) back to turn 1" in m for m in shown), shown
             app.submit_instruction("the message, edited")
             await app.workers.wait_for_complete()
@@ -198,7 +198,7 @@ def test_fork_of_a_finished_run_hands_the_composer_to_the_unstarted_fork(
             app.action_fork()
             await pilot.pause()
             assert app.continue_as == "fork-child-CCCCCC"
-            bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)
             assert "continue as fork-child-CCCCCC" in str(bar.border_title)
             app.submit_instruction("try the other design")
             await app.workers.wait_for_complete()
@@ -424,7 +424,7 @@ def test_a_refused_btw_toasts_as_a_warning(
             await pilot.pause()
             app.submit_instruction("/btw why?")
             await pilot.pause()
-            notes = app._notifications  # pyright: ignore[reportPrivateUsage]
+            notes = app._notifications
             return [(str(n.message), n.severity) for n in notes]
 
     assert ("no live run to ask beside", "warning") in asyncio.run(scenario())

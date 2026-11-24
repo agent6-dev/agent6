@@ -34,7 +34,7 @@ def _calls(module: types.ModuleType, name: str) -> int:
 def test_neither_lifecycle_builds_its_own_workflow() -> None:
     assert _calls(agent6.app.run, "Harness") == 0
     assert _calls(agent6.app.resume, "Harness") == 0
-    assert _calls(agent6.app.execution, "Harness") == 1  # pyright: ignore[reportPrivateUsage]
+    assert _calls(agent6.app.execution, "Harness") == 1
 
 
 def test_both_lifecycles_run_the_one_execution_body() -> None:

@@ -47,7 +47,7 @@ _FINISH: tuple[dict[str, Any], ...] = (
 
 
 @pytest.fixture(autouse=True)
-def _no_controlling_terminal(  # pyright: ignore[reportUnusedFunction]
+def _no_controlling_terminal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("agent6.portable.has_controlling_tty", lambda: False)

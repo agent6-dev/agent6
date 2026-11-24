@@ -713,7 +713,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
 
     def _emit(self, seq: str) -> None:
         """Write a raw terminal escape (an OSC 52 clipboard set) through the driver."""
-        driver = self.app._driver  # pyright: ignore[reportPrivateUsage]
+        driver = self.app._driver  # pyrefly: ignore[protected-access]
         if driver is not None:
             driver.write(seq)
 

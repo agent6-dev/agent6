@@ -339,11 +339,11 @@ def test_a_broken_stdin_carries_the_servers_own_words() -> None:
     srv = tools_mcp_client._MCPServer(
         name="dead", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0
     )
-    srv._proc = jail.JailedProcess(proc)  # pyright: ignore[reportPrivateUsage]
-    srv._errors = [b"executable was not found\n"]  # pyright: ignore[reportPrivateUsage]
+    srv._proc = jail.JailedProcess(proc)
+    srv._errors = [b"executable was not found\n"]
     try:
         with pytest.raises(tools_mcp_client.MCPError, match="executable was not found"):
-            srv._write_line({"jsonrpc": "2.0"})  # pyright: ignore[reportPrivateUsage]
+            srv._write_line({"jsonrpc": "2.0"})
     finally:
         srv.close()
 
@@ -700,9 +700,7 @@ def test_unconfined_server_ties_to_the_agent(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-secret")
     live = jail_mod.live_launchers
     try:
-        mcp_client._spawn_server(  # pyright: ignore[reportPrivateUsage]
-            ("fake-server",), pass_env=(), policy=None
-        )
+        mcp_client._spawn_server(("fake-server",), pass_env=(), policy=None)
         assert 4242 in live
     finally:
         live.discard(4242)
@@ -758,9 +756,9 @@ def test_a_restarted_servers_survivors_accumulate(monkeypatch: pytest.MonkeyPatc
     )
     procs = [subprocess.Popen(["sleep", "60"], start_new_session=True) for _ in range(2)]
     try:
-        srv._proc = jail.JailedProcess(procs[0])  # pyright: ignore[reportPrivateUsage]
+        srv._proc = jail.JailedProcess(procs[0])
         assert srv.close() == frozenset({4321})
-        srv._proc = jail.JailedProcess(procs[1])  # pyright: ignore[reportPrivateUsage]
+        srv._proc = jail.JailedProcess(procs[1])
         assert srv.close() == frozenset({4321, 4322})
     finally:
         for proc in procs:
@@ -808,8 +806,8 @@ def test_a_call_cut_short_by_another_callers_restart_is_retried_once() -> None:
         )
         assert outcomes["b"] == {"content": [{"type": "text", "text": "hi"}]}
         assert time.monotonic() - started < 3.0, "a caller waited on a server that was gone"
-        server = mgr._servers["slow"]  # pyright: ignore[reportPrivateUsage]
-        assert server._generation == 1  # pyright: ignore[reportPrivateUsage]
+        server = mgr._servers["slow"]
+        assert server._generation == 1
     finally:
         mgr.close()
 
@@ -833,12 +831,12 @@ def test_the_manager_hands_back_every_survivor_of_its_servers(
     survived = tools_mcp_client._MCPServer(
         name="a", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0
     )
-    survived._proc = jail.JailedProcess(escapee)  # pyright: ignore[reportPrivateUsage]
+    survived._proc = jail.JailedProcess(escapee)
     clean = tools_mcp_client._MCPServer(
         name="b", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0
     )
     manager = tools_mcp_client.MCPManager()
-    manager._servers = {"a": survived, "b": clean}  # pyright: ignore[reportPrivateUsage]
+    manager._servers = {"a": survived, "b": clean}
     try:
         assert manager.close() == frozenset({4321})
         assert manager.close() == frozenset()  # idempotent: nothing left to close

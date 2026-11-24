@@ -13,7 +13,7 @@ import pytest
 from agent6 import paths
 from agent6.sessions import ipc, process
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.cli import answer_cmd as cli_answer_cmd  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import answer_cmd as cli_answer_cmd
 
 
 def _run_with_question(

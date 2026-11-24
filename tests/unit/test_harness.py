@@ -376,7 +376,7 @@ def _turn(**kw: Any) -> Any:
 
 
 def _ctx(wf: loop.Harness, state: Any, turn: int = 1) -> Any:
-    return wf._turn_context(state, turn=turn, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    return wf._turn_context(state, turn=turn, execution_start=1)
 
 
 def _plateau_stop() -> advice.Stop:
@@ -390,7 +390,7 @@ def _plateau_stop() -> advice.Stop:
 def _settle(wf: loop.Harness, state: Any, turn: Any) -> Any:
     """The settled advisor's answer, applied through the loop; a stop runs the end gates at once."""
     ctx = _ctx(wf, state, turn.number)
-    return wf._take(state, turn, ctx, guards.verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
+    return wf._take(state, turn, ctx, guards.verify_settled(turn, state, ctx))
 
 
 def test_finish_planning_salvages_a_title_only_plan(tmp_path: pathlib.Path) -> None:
@@ -953,13 +953,13 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: pathlib.Path
     state = _state()
 
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # the run's edit
-    wf._sample_metric(state, _turn(number=1), sha="")  # pyright: ignore[reportPrivateUsage]
-    wf._sample_metric(state, _turn(number=2), sha="")  # pyright: ignore[reportPrivateUsage]
+    wf._sample_metric(state, _turn(number=1), sha="")
+    wf._sample_metric(state, _turn(number=2), sha="")
 
     assert calls == ["run_metric_command"], "a read-only turn re-ran the benchmark"
 
     (repo / "a.py").write_text("x = 3\n", encoding="utf-8")  # a new state of the tree
-    wf._sample_metric(state, _turn(number=3), sha="")  # pyright: ignore[reportPrivateUsage]
+    wf._sample_metric(state, _turn(number=3), sha="")
 
     assert calls == ["run_metric_command", "run_metric_command"]
 
@@ -1055,7 +1055,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="abc1234567890"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -1139,7 +1139,7 @@ def test_drive_loop_tracks_turns_reached(tmp_path: pathlib.Path) -> None:
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
 
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="abc1234567890"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -1203,7 +1203,7 @@ def test_abnormal_end_keeps_an_observed_red_verdict(
         max_turns=1 if ending == "turns" else 3,
     )
     wf.config = _knobs(wf.config, went_quiet_max_nudges=0)
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="s",
         conversation=loop_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
@@ -1262,7 +1262,7 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: pathlib.Pa
         max_turns=3,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="system",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -1323,7 +1323,7 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: pathlib.Path)
         call=provider_call.CallSettings(retry_count=3, retry_delay_s=0.01),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="system",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -1355,7 +1355,7 @@ def test_exhausted_provider_retries_keep_the_attempt_count_and_reason(
         call=provider_call.CallSettings(retry_count=2, retry_delay_s=0),
     )
 
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="system",
         conversation=loop_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
@@ -1379,7 +1379,7 @@ def test_the_first_model_call_carries_the_red_start_gate(
     base = "b" * 40
     monkeypatch.setattr(
         "agent6.vcs.git.read.status",
-        lambda _root, **_kw: types.SimpleNamespace(is_clean=True, head_sha=base),  # pyright: ignore[reportUnknownLambdaType]
+        lambda _root, **_kw: types.SimpleNamespace(is_clean=True, head_sha=base),  # pyrefly: ignore[implicit-any-lambda]
     )
     provider = mock.MagicMock()
     provider.call.side_effect = ProviderError("down")
@@ -1398,7 +1398,7 @@ def test_the_first_model_call_carries_the_red_start_gate(
     )
     wf.config.harness.verify.command, wf.config.harness.verify.when = ("pytest",), "finish"
 
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="system",
         conversation=loop_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
@@ -1441,7 +1441,7 @@ def test_a_call_the_providers_front_end_refused_is_an_error_result_not_a_dispatc
         [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
     )
 
-    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    wf._drive_loop(
         system="system",
         conversation=conversation,
         tool_calls=0,
@@ -1553,7 +1553,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> No
     snapshot = _resume_snapshot()
 
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="abc1234567890"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system=snapshot.system,
             conversation=loop_conversation.Conversation.from_wire(snapshot.messages),
             tool_calls=snapshot.tool_calls,
@@ -1614,7 +1614,7 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: pathlib.Path) -> 
         verify_ever_passed=True,
     )
 
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system=snapshot.system,
         conversation=loop_conversation.Conversation.from_wire(snapshot.messages),
         tool_calls=snapshot.tool_calls,
@@ -1695,7 +1695,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: pathlib
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="abc1234567890"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -1773,7 +1773,7 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: path
         mock.patch("agent6.vcs.git.ops.chain_commit", return_value="abc1234567890"),
         mock.patch.object(run_chain.RunChain, "tree_sha", side_effect=lambda: next(trees)),
     ):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -1877,7 +1877,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
         return f"sha{len(commits)}"
 
     with mock.patch("agent6.vcs.git.ops.chain_commit", side_effect=_fake_commit):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -1960,7 +1960,7 @@ def test_an_editing_turn_checkpoints_whatever_the_gate_policy(tmp_path: pathlib.
         return f"sha{len(commits)}"
 
     with mock.patch("agent6.vcs.git.ops.chain_commit", side_effect=_fake_commit):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -1996,7 +1996,7 @@ def test_worker_max_tokens_starvation_backoff() -> None:
         )
     )
     wf = _wf(metric=directive.parse_metric_spec(r"minimize -- score"), config=metric_cfg)
-    wmt = wf._worker_max_tokens  # pyright: ignore[reportPrivateUsage]
+    wmt = wf._worker_max_tokens
     full = max(wf.call.per_call_max_tokens, wf.call.metric_task_max_tokens)
     assert wmt(_state(quiet=quiet_turns.QuietGuard(went_quiet_nudges_used=0))) == full
     assert (
@@ -2033,7 +2033,7 @@ def test_worker_max_tokens_starvation_backoff() -> None:
             ),
         ),
     )
-    pwmt = plain._worker_max_tokens  # pyright: ignore[reportPrivateUsage]
+    pwmt = plain._worker_max_tokens
     assert (
         pwmt(_state(quiet=quiet_turns.QuietGuard(went_quiet_nudges_used=0)))
         == plain.call.per_call_max_tokens
@@ -2116,7 +2116,7 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: pathlib.Path)
         ),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="s",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -2203,7 +2203,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: pathlib.Path) -> None:
         "agent6.vcs.git.ops.chain_commit",
         side_effect=["sha1", "sha2", "sha3", "sha4", "sha5", "sha6", "sha7", "sha8"],
     ):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -2300,7 +2300,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: pathlib.Path) -> No
         "agent6.vcs.git.ops.chain_commit",
         side_effect=["sha1", "sha2", "sha3", "sha4", "sha5"],
     ):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -2394,14 +2394,14 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
         max_turns=20,
     )
     # The budget fraction follows the measurement count: samples 5-8 see 80% left, 9+ see 10%.
-    wf._budget_fraction_remaining = lambda: 0.8 if dispatcher.metric_count <= 8 else 0.1  # type: ignore[method-assign]  # pyright: ignore[reportPrivateUsage]
+    wf._budget_fraction_remaining = lambda: 0.8 if dispatcher.metric_count <= 8 else 0.1  # type: ignore[method-assign]
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch(
         "agent6.vcs.git.ops.chain_commit",
         side_effect=[f"sha{i}" for i in range(20)],
     ):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -2452,7 +2452,7 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: pathlib.P
         max_turns=nudges.PLAN_NUDGE_AFTER_TURNS + 3,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nplan a feature"}]}]
-    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    wf._drive_loop(
         system="s",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -2502,7 +2502,7 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
         max_turns=5,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nplan"}]}]
-    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    wf._drive_loop(
         system="s",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -2552,7 +2552,7 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
         max_turns=4,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    wf._drive_loop(
         system="s",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -2620,7 +2620,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> 
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -2702,7 +2702,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -2826,7 +2826,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(
         root=tmp_path, config=config, mode="run", provider=provider, dispatcher=DispatcherStub()
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="s",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -2889,7 +2889,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: pathlib.Path) -
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value=""):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -2966,7 +2966,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: pathlib.Path
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value=""):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -3071,7 +3071,7 @@ def test_a_batch_count_on_the_score_line_cannot_end_a_plateau_with_budget_left(
         "agent6.vcs.git.ops.chain_commit",
         side_effect=[f"sha{i}" for i in range(1, max_turns + 2)],
     ):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -3148,7 +3148,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: pathlib.Pat
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="system",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -3218,7 +3218,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: pathlib.Path) 
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="system",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -3301,7 +3301,7 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: pathlib.Path
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="system",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -3397,7 +3397,7 @@ def test_only_a_typed_target_allows_an_early_finish(
         "agent6.vcs.git.ops.chain_commit",
         side_effect=[f"sha{i}" for i in range(1, 22)],
     ):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -3508,7 +3508,7 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
             per_call_max_tokens=16384, metric_task_max_tokens=32768, retry_delay_s=0.01
         ),
     )
-    assert wf._worker_max_tokens(_state()) == 32768  # pyright: ignore[reportPrivateUsage]
+    assert wf._worker_max_tokens(_state()) == 32768
 
 
 def test_worker_max_tokens_keeps_default_without_metric() -> None:
@@ -3539,7 +3539,7 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
             per_call_max_tokens=16384, metric_task_max_tokens=32768, retry_delay_s=0.01
         ),
     )
-    assert wf._worker_max_tokens(_state()) == 16384  # pyright: ignore[reportPrivateUsage]
+    assert wf._worker_max_tokens(_state()) == 16384
 
 
 def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
@@ -3571,7 +3571,7 @@ def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
             per_call_max_tokens=16384, metric_task_max_tokens=32768, retry_delay_s=0.01
         ),
     )
-    assert wf._worker_max_tokens(_state()) == 16384  # pyright: ignore[reportPrivateUsage]
+    assert wf._worker_max_tokens(_state()) == 16384
 
 
 # --- tier-2 summarize-and-restart compaction ------------------------------
@@ -3958,7 +3958,7 @@ def test_a_settled_end_over_open_subtasks_after_the_cap_keeps_its_verdict() -> N
     with mock.patch.object(run_chain.RunChain, "tree_sha", return_value="tree"):
         assert _settle(wf, state, turn) is None
         assert turn.stops and turn.end_returned is False
-        result = wf._turn_stop_checks(state, turn, loop_conversation.Conversation())  # pyright: ignore[reportPrivateUsage]
+        result = wf._turn_stop_checks(state, turn, loop_conversation.Conversation())
 
     assert result is not None and result.reason == "verify_settled"
     assert result.summary.startswith("verify passed and the worker stopped making changes")
@@ -3976,7 +3976,7 @@ def test_a_settled_end_from_the_scoped_gate_reads_scoped() -> None:
     turn = _turn()
     with mock.patch.object(run_chain.RunChain, "tree_sha", return_value="tree"):
         assert _settle(wf, state, turn) is None
-        result = wf._turn_stop_checks(state, turn, loop_conversation.Conversation())  # pyright: ignore[reportPrivateUsage]
+        result = wf._turn_stop_checks(state, turn, loop_conversation.Conversation())
     assert result is not None and result.reason == "verify_settled"
     ends = [e for e in ev.events if e["type"] == "session.stop"]
     assert ends[-1]["verification"] == "passed" and ends[-1]["scoped"] is True
@@ -3988,8 +3988,8 @@ def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
     assert (
         finish_gates.task_finish_nudge(_wf(curator=root_only).open_subtasks(), _state().gates)
         is None
-    )  # pyright: ignore[reportPrivateUsage]
-    assert finish_gates.task_finish_nudge(_wf(curator=None).open_subtasks(), _state().gates) is None  # pyright: ignore[reportPrivateUsage]
+    )
+    assert finish_gates.task_finish_nudge(_wf(curator=None).open_subtasks(), _state().gates) is None
 
 
 def test_verify_settled_end_is_refused_while_a_subtask_is_open() -> None:
@@ -4034,7 +4034,7 @@ def test_metric_plateau_end_is_refused_while_a_subtask_is_open() -> None:
     turn = _turn(metric_plateau_finish="score reached its ceiling")
 
     ctx = _ctx(wf, state)
-    result = wf._take(state, turn, ctx, metric_rules.metric_plateau(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
+    result = wf._take(state, turn, ctx, metric_rules.metric_plateau(turn, state, ctx))
 
     assert result is None
     assert turn.stops == []
@@ -4050,7 +4050,7 @@ def test_metric_plateau_end_is_refused_while_a_subtask_is_open() -> None:
 
 def test_current_task_id_prefers_open_cursor() -> None:
     """The cursor wins when it still points at an open subtask, even if an earlier one is open."""
-    from agent6.harness import dag_focus  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness import dag_focus
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r"},
@@ -4122,7 +4122,7 @@ def test_first_ready_subtask_surfaces_a_parent_over_a_failed_child() -> None:
 
 
 def test_current_task_banner_carries_title_acceptance_paths() -> None:
-    from agent6.harness import dag_focus  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness import dag_focus
 
     banner = dag_focus.current_task_banner(
         "01TASK",
@@ -4179,7 +4179,7 @@ def test_graph_update_snapshot_payload_is_wire_stable(tmp_path: pathlib.Path) ->
             captured.append((event.TYPE, event.model_dump(mode="json", exclude_unset=True)))
 
     wf = _wf(curator=cur, events=_Events())
-    wf._emit_graph_snapshot()  # pyright: ignore[reportPrivateUsage]
+    wf._emit_graph_snapshot()
 
     assert len(captured) == 1
     etype, fields = captured[0]
@@ -4246,7 +4246,7 @@ class _FakeCurator:
 def _surface(wf: loop.Harness, st: Any, messages: list[dict[str, Any]]) -> None:
     """Wire-in/wire-out driver so the tests keep asserting on message dicts."""
     conversation = loop_conversation.Conversation.from_wire(messages)
-    wf._maybe_surface_current_task(conversation, st)  # pyright: ignore[reportPrivateUsage]
+    wf._maybe_surface_current_task(conversation, st)
     messages[:] = conversation.to_wire()
 
 
@@ -4613,7 +4613,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: x"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="abc1234567890"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -4723,7 +4723,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: review"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="abc1234567890"):
-        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -5539,7 +5539,7 @@ def test_drive_loop_summarizes_midrun_then_completes(tmp_path: pathlib.Path) -> 
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: optimize"}]}]
 
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="abc1234567890"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -5588,14 +5588,14 @@ def test_pass_pending_root_tasks_passes_only_pending_roots() -> None:
     }
     fake = _FakeClient(nodes)
     wf = _wf(curator=fake)
-    wf._pass_pending_root_tasks()  # pyright: ignore[reportPrivateUsage]
+    wf._pass_pending_root_tasks()
     assert set(fake.passed) == {"root1", "root3"}
 
 
 def test_pass_pending_root_tasks_noop_without_curator() -> None:
     """No curator wired (e.g. ask without a DAG) -> the auto-pass is a no-op."""
     wf = _wf(curator=None)
-    wf._pass_pending_root_tasks()  # pyright: ignore[reportPrivateUsage]  (must not raise)
+    wf._pass_pending_root_tasks()  # must not raise
 
 
 def test_drive_loop_gateless_settles_after_commit(tmp_path: pathlib.Path) -> None:
@@ -5650,7 +5650,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: pathlib.Path) -> Non
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -5846,7 +5846,7 @@ def test_question_nudge_then_accept(tmp_path: pathlib.Path) -> None:
         max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nadd a theme"}]}]
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="s",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -5956,7 +5956,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: pathlib.P
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -6035,7 +6035,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: pathlib.Pa
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -6123,7 +6123,7 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: pat
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -6187,7 +6187,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -6258,7 +6258,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: pathlib.P
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -6352,7 +6352,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -6426,7 +6426,7 @@ def test_drive_loop_leaves_result_deduplication_to_its_compactor(
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nread"}]}]
     conversation = loop_conversation.Conversation.from_wire(messages)
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        wf._drive_loop(
             system="s",
             conversation=conversation,
             tool_calls=0,
@@ -6512,7 +6512,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: pathlib.Path) 
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nsearch"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -6609,7 +6609,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: path
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nship"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -6684,7 +6684,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: pathlib.Path) 
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -6877,7 +6877,7 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.P
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -6950,7 +6950,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -7023,7 +7023,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -7095,7 +7095,7 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -7169,7 +7169,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -7258,7 +7258,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -7327,7 +7327,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -7415,7 +7415,7 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: pathlib
         events=_Events(),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
-    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    wf._drive_loop(
         system="s",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -7478,7 +7478,7 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: pathlib.P
         events=_Events(),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
-    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    wf._drive_loop(
         system="s",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -7524,7 +7524,7 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
             ),
         ),
     )
-    out = wf._turn_dispatch_tools(_state(), turn, turn_context())  # pyright: ignore[reportPrivateUsage]
+    out = wf._turn_dispatch_tools(_state(), turn, turn_context())
     assert out is None  # the refusal is served as an error result, not an abort
     assert turn.finish is None  # and never captured as a finish
 
@@ -7551,7 +7551,7 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
             ),
         ),
     )
-    wf._turn_dispatch_tools(state, turn, turn_context())  # pyright: ignore[reportPrivateUsage]
+    wf._turn_dispatch_tools(state, turn, turn_context())
     assert state.ok_tool_calls == 0  # a control verb is not work
 
     worked = loop_state.TurnState(
@@ -7562,7 +7562,7 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
             tool_uses=(loop_conversation.ToolUse(id="tu2", name="read_file", input={"path": "x"}),),
         ),
     )
-    wf._turn_dispatch_tools(state, worked, turn_context())  # pyright: ignore[reportPrivateUsage]
+    wf._turn_dispatch_tools(state, worked, turn_context())
     assert state.ok_tool_calls == 1
 
 
@@ -7620,7 +7620,7 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None
         ),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="system",
         conversation=loop_conversation.Conversation.from_wire(messages),
         tool_calls=0,
@@ -7653,7 +7653,7 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
         verify=verify_verdict.VerifyVerdict(ever_passed=True, last_ok=True, edited_since=True),
     )
     with mock.patch.object(run_chain.RunChain, "dirty", return_value=False):
-        result = wf._turn_stop_checks(state, turn, loop_conversation.Conversation())  # pyright: ignore[reportPrivateUsage]
+        result = wf._turn_stop_checks(state, turn, loop_conversation.Conversation())
     assert result is not None and result.reason == "metric_plateau"
     ends = [e for e in ev.events if e["type"] == "session.stop"]
     assert ends and ends[-1]["verification"] == "unverified"
@@ -7677,7 +7677,7 @@ def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
         verify=verify_verdict.VerifyVerdict(ever_passed=True, last_ok=True, edited_since=False),
     )
     with mock.patch.object(run_chain.RunChain, "dirty", return_value=False):
-        result = wf._turn_stop_checks(state, turn, loop_conversation.Conversation())  # pyright: ignore[reportPrivateUsage]
+        result = wf._turn_stop_checks(state, turn, loop_conversation.Conversation())
     assert result is not None and result.reason == "metric_plateau"
     ends = [e for e in ev.events if e["type"] == "session.stop"]
     assert ends and ends[-1]["verification"] == "passed"
@@ -7724,7 +7724,7 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
     state.verify.last_ok = False  # red tree: verification must stay False
     state.verify.edited_since = True
     events: list[dict[str, Any]] = []
-    wf.emit = lambda event: events.append(  # pyright: ignore[reportAttributeAccessIssue]
+    wf.emit = lambda event: events.append(  # pyrefly: ignore[method-assign]
         {"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)}
     )
 
@@ -8052,11 +8052,11 @@ def test_standing_patience_bounds_fruitless_reentries() -> None:
             wf0, "Done.", loop_conversation.Conversation(), state0, quiet, ctx0
         )
         is None
-    )  # pyright: ignore[reportPrivateUsage]
+    )
     quiet = _turn(number=4)
     ended0 = quiet_turns.handle_silent_finish(
         wf0, "Done.", loop_conversation.Conversation(), state0, quiet, ctx0
-    )  # pyright: ignore[reportPrivateUsage]
+    )
     assert ended0 is not None and ended0.reason == "silent_finish"
 
 
@@ -8068,7 +8068,7 @@ def test_standing_task_gates_finish_session_and_soft_stops() -> None:
     state = _state()
     turn = _turn(number=2)
     turn.finish = finish_gates.FinishCall("finish_session", "all done")
-    wf._turn_finish_gates(state, turn, _ctx(wf, state, 2))  # pyright: ignore[reportPrivateUsage]
+    wf._turn_finish_gates(state, turn, _ctx(wf, state, 2))
     assert turn.finish is None  # revoked: the goal continues
     assert any("standing task" in getattr(n, "text", "") for n in turn.tool_results)
     # Soft stop: verify_settled absorbs and clears its streak.
@@ -8178,7 +8178,7 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
         _state(ever_edited=True, verify=verify_verdict.VerifyVerdict(ever_passed=True)),
         _turn(number=4),
         _ctx(wf2, _state()),
-    )  # pyright: ignore[reportPrivateUsage]
+    )
     assert ended is not None and ended.reason == "steer_abort"
 
 
@@ -8192,7 +8192,7 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
         _state(ever_edited=True, verify=verify_verdict.VerifyVerdict(ever_passed=True)),
         _turn(number=4),
         _ctx(wf, _state()),
-    )  # pyright: ignore[reportPrivateUsage]
+    )
     assert ended is not None and ended.reason == "silent_finish"
     # A standing goal outranks the park: the absorb nudge continues the run.
     curator = mock.MagicMock()
@@ -8207,7 +8207,7 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
         _state(ever_edited=True, verify=verify_verdict.VerifyVerdict(ever_passed=True)),
         _turn(number=4),
         _ctx(wf2, _state()),
-    )  # pyright: ignore[reportPrivateUsage]
+    )
     assert out is None
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
 
@@ -8267,7 +8267,7 @@ def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: pathlib.Path)
     turn.verify_just_passed = True
     turn.edit_since_verify_pass = False
     with mock.patch.object(run_chain.RunChain, "commit", return_value=""):
-        wf._turn_auto_commit_and_metric(_state(), turn)  # pyright: ignore[reportPrivateUsage]
+        wf._turn_auto_commit_and_metric(_state(), turn)
     assert [e for e in events if e["type"] == "checkpoint.committed"] == []
     assert turn.committed is False
 
@@ -8382,7 +8382,7 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: pat
         resume_state_path=tmp_path / "loop_state.json",
     )
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="abc1234567890"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(_TASK_WIRE),
             tool_calls=0,
@@ -8427,7 +8427,7 @@ def test_an_end_declared_mid_turn_clears_the_turn_marker(tmp_path: pathlib.Path)
         max_turns=3,
         resume_state_path=tmp_path / "loop_state.json",
     )
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="system",
         conversation=loop_conversation.Conversation.from_wire(_TASK_WIRE),
         tool_calls=0,
@@ -8468,7 +8468,7 @@ def _die_in_the_second_call(tmp_path: pathlib.Path) -> pathlib.Path:
         resume_state_path=snapshot_path,
     )
     with pytest.raises(_Died):
-        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(_TASK_WIRE),
             tool_calls=0,
@@ -8820,7 +8820,7 @@ def test_operator_answers_become_recorded_rulings(tmp_path: pathlib.Path) -> Non
     # The check reads the file, not the capped injection view.
     with memory.decisions_path(state_dir).open("a", encoding="utf-8") as fh:
         fh.write("- 2026-08-23T00:00:00Z [other] Q: pad\n  A: " + "x" * 5000 + "\n")
-    wf._check_decisions_recorded(st)  # pyright: ignore[reportPrivateUsage]
+    wf._check_decisions_recorded(st)
     assert not any(
         c.kwargs.get("missing")
         for c in events.emit.call_args_list
@@ -8953,7 +8953,7 @@ def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: path
     (repo / "x.txt").write_text("an improvement\n", encoding="utf-8")
 
     tool_effects.note(wf, state, turn, "run_metric_command", _metric_result(42.0), {})
-    wf._turn_auto_commit_and_metric(state, turn)  # pyright: ignore[reportPrivateUsage]
+    wf._turn_auto_commit_and_metric(state, turn)
 
     assert dispatched == [], "the harness re-ran the operator's metric over an unchanged tree"
     assert [s.score for s in state.metric.history] == [42.0]
@@ -8964,7 +8964,7 @@ def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: path
         resp=_resp(""),
         assistant=loop_conversation.AssistantMessage(raw_content=(), tool_uses=()),
     )
-    wf._turn_auto_commit_and_metric(state, later)  # pyright: ignore[reportPrivateUsage]
+    wf._turn_auto_commit_and_metric(state, later)
     assert dispatched == []
     assert [s.score for s in state.metric.history] == [42.0]
 
@@ -8990,7 +8990,7 @@ def test_three_real_improvements_do_not_read_as_a_plateau(tmp_path: pathlib.Path
         (repo / "x.txt").write_text(f"improvement {i}\n", encoding="utf-8")
         turn = _edited_turn(i)
         tool_effects.note(wf, state, turn, "run_metric_command", _metric_result(score["v"]), {})
-        wf._turn_auto_commit_and_metric(state, turn)  # pyright: ignore[reportPrivateUsage]
+        wf._turn_auto_commit_and_metric(state, turn)
         if turn.metric_plateau_finish is not None:
             plateaus.append(turn.metric_plateau_finish)
 
@@ -9007,7 +9007,7 @@ def _settles_at(
     if gated:
         state.verify.note_pass()
         first.verify_just_passed = True
-    wf._turn_auto_commit_and_metric(state, first)  # pyright: ignore[reportPrivateUsage]
+    wf._turn_auto_commit_and_metric(state, first)
     _settle(wf, state, first)
     for i in range(2, 36):
         turn = loop_state.TurnState(
@@ -9015,7 +9015,7 @@ def _settles_at(
             resp=_resp(""),
             assistant=loop_conversation.AssistantMessage(raw_content=(), tool_uses=()),
         )
-        wf._turn_auto_commit_and_metric(state, turn)  # pyright: ignore[reportPrivateUsage]
+        wf._turn_auto_commit_and_metric(state, turn)
         _settle(wf, state, turn)
         if turn.stops:
             return i
@@ -9276,7 +9276,7 @@ def test_the_root_passes_with_an_open_child(
         curator=curator,
     )
 
-    wf._pass_pending_root_tasks()  # pyright: ignore[reportPrivateUsage]
+    wf._pass_pending_root_tasks()
 
     assert curator.nodes()[root.id].status == "passed"
 
@@ -9321,7 +9321,7 @@ def test_the_focus_surface_fits_a_standing_task(tmp_path: pathlib.Path) -> None:
     conversation.notice("TASK: keep the fleet green")
 
     for _ in range(dag_focus.STUCK_ON_TASK_AFTER + 2):
-        wf._maybe_surface_current_task(conversation, state)  # pyright: ignore[reportPrivateUsage]
+        wf._maybe_surface_current_task(conversation, state)
 
     texts = [
         item.text
@@ -9440,7 +9440,7 @@ def test_a_turn_declaring_two_ends_reviewers_the_panel_once(tmp_path: pathlib.Pa
         max_turns=10,
         review=review_gate.ReviewSettings(
             when="finish",
-            reviewers=[object()],  # pyright: ignore[reportArgumentType]
+            reviewers=[object()],  # pyrefly: ignore[bad-argument-type]
         ),
     )
     panels: list[str] = []
@@ -9459,7 +9459,7 @@ def test_a_turn_declaring_two_ends_reviewers_the_panel_once(tmp_path: pathlib.Pa
         ),
         mock.patch.object(review_gate.ReviewGate, "critique", fake_panel),
     ):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="system",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -9533,7 +9533,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha1") as commit:
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -9615,7 +9615,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Pat
         return next(shas)
 
     with mock.patch("agent6.vcs.git.ops.chain_commit", side_effect=_next_sha):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(messages),
             tool_calls=0,
@@ -9743,7 +9743,7 @@ def test_finish_delivers_an_answer_that_lands_during_its_turn(
         resume_state_path=snapshot_path,
     )
     try:
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="s",
             conversation=loop_conversation.Conversation.from_wire(_TASK_WIRE),
             tool_calls=0,
@@ -9928,7 +9928,7 @@ def test_image_results_bypass_cap_and_repeat_stubbing() -> None:
     for number in (1, 2):
         tu = loop_conversation.ToolUse(f"t{number}", "read_file", {"path": image.source_path})
         turn = _turn(number=number, assistant=loop_conversation.AssistantMessage((), (tu,)))
-        wf._turn_dispatch_tools(state, turn, turn_context())  # pyright: ignore[reportPrivateUsage]
+        wf._turn_dispatch_tools(state, turn, turn_context())
         item = turn.tool_results[0]
         assert item.attachment is image
         assert json.loads(item.content) == tools_results.ReadMediaResult(image).to_wire()
@@ -9985,7 +9985,7 @@ def test_media_recovery_updates_canonical_history_snapshot_and_execution_fact(
     state.system = "s"
     response = wf._turn_provider_call(
         "s", conv, [], state, turn=1, ctx=wf._turn_context(state, turn=1, execution_start=1)
-    )  # pyright: ignore[reportPrivateUsage]
+    )
     assert isinstance(response, ProviderResponse) and response.text == "seen"
     assert provider.call.call_count == 2
     assert "Cannot deliver" in conv.to_wire()[-1]["content"][0]["content"]
@@ -9998,7 +9998,7 @@ def test_media_recovery_updates_canonical_history_snapshot_and_execution_fact(
     add_media("t2")
     wf._turn_provider_call(
         "s", conv, [], state, turn=2, ctx=wf._turn_context(state, turn=2, execution_start=1)
-    )  # pyright: ignore[reportPrivateUsage]
+    )
     assert provider.call.call_count == 3
     assert (
         "Cannot deliver" in provider.call.call_args.kwargs["messages"][-1]["content"][0]["content"]
@@ -10056,7 +10056,7 @@ def test_a_subject_that_cannot_read_git_reports_the_failed_commit(tmp_path: path
     turn.edited = True
     fault = errors.GitError("unable to read tree")
     with mock.patch.object(type(wf.chain), "name_status", side_effect=fault):
-        wf._turn_auto_commit_and_metric(_state(), turn)  # pyright: ignore[reportPrivateUsage]
+        wf._turn_auto_commit_and_metric(_state(), turn)
     (evt,) = [e for e in events if e["type"] == "checkpoint.failed"]
     assert evt["commit_subject"] == "checkpoint" and "unable to read tree" in evt["error"]
     assert turn.committed is False

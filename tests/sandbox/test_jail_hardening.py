@@ -31,7 +31,7 @@ def test_a_jailed_command_cannot_create_a_device_node(tmp_path: pathlib.Path, le
         policy.jail_policy(
             tmp_path,
             Config(),
-            level,  # pyright: ignore[reportArgumentType]
+            level,  # pyrefly: ignore[bad-argument-type]
             ("sh", "-c", "mknod disk b 8 0; mknod tty c 5 0; ls disk tty 2>&1"),
             network="none",
         )
@@ -57,7 +57,7 @@ def test_a_fifo_is_still_a_thing_a_build_can_make(tmp_path: pathlib.Path) -> Non
         policy.jail_policy(
             tmp_path,
             Config(),
-            level,  # pyright: ignore[reportArgumentType]
+            level,
             ("sh", "-c", f"mkfifo {level}.pipe && test -p {level}.pipe && echo fifo-ok"),
             network="none",
         )
@@ -699,7 +699,7 @@ def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: pathlib.Path, lev
         kinds.JailPolicy(
             cwd=tmp_path,
             argv=("python3", "-c", probe),
-            isolation=level,  # pyright: ignore[reportArgumentType]
+            isolation=level,  # pyrefly: ignore[bad-argument-type]
             timeout_s=20.0,
         )
     )
@@ -750,7 +750,7 @@ def test_io_uring_and_userfaultfd_are_denied(tmp_path: pathlib.Path, level: str)
         kinds.JailPolicy(
             cwd=tmp_path,
             argv=("python3", "-c", probe),
-            isolation=level,  # pyright: ignore[reportArgumentType]
+            isolation=level,  # pyrefly: ignore[bad-argument-type]
             timeout_s=20.0,
         )
     )

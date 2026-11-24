@@ -215,7 +215,7 @@ def test_the_steer_seam_is_inert(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
     """ACP steers by prompting into a live session; a pause menu has no terminal to draw on."""
     monkeypatch.setattr(ipc, "FRONTEND_DEAD_GRACE_S", 0.0)
     front, _asked = _frontend()
-    steer = front.make_steer_state(None, tmp_path, lambda: None)  # pyright: ignore[reportArgumentType]
+    steer = front.make_steer_state(None, tmp_path, lambda: None)  # pyrefly: ignore[bad-argument-type]
     assert steer.requested() is False
     assert steer.prompt() is None
     assert steer.abort_pending() is False
@@ -251,7 +251,7 @@ def test_the_ask_repl_is_refused_rather_than_faked() -> None:
     """Two prompt loops reading the same stdin is not something to paper over."""
     front, _asked = _frontend()
     with pytest.raises(RuntimeError, match="the editor prompts"):
-        front.run_ask_repl(None, None, None, "q", None)  # pyright: ignore[reportArgumentType]
+        front.run_ask_repl(None, None, None, "q", None)  # pyrefly: ignore[bad-argument-type]
 
 
 def test_steer_hooks_consume_a_seeded_resume_steer(tmp_path: pathlib.Path) -> None:
@@ -264,9 +264,9 @@ def test_steer_hooks_consume_a_seeded_resume_steer(tmp_path: pathlib.Path) -> No
 
     front, _ = _frontend()
     hooks = front.make_steer_state(
-        None,  # pyright: ignore[reportArgumentType]
+        None,  # pyrefly: ignore[bad-argument-type]
         tmp_path,
-        lambda: None,  # pyright: ignore[reportArgumentType]
+        lambda: None,  # pyrefly: ignore[bad-argument-type]
     )
     assert hooks.requested() is False
     ipc.request_steer(tmp_path)

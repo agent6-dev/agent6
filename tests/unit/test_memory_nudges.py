@@ -74,7 +74,7 @@ def _notice_texts(turn: loop_state.TurnState) -> list[str]:
 
 def _flip(wf: loop.Harness, state: loop_state.LoopState, turn: loop_state.TurnState) -> str | None:
     """The flip advisory's text for this turn, as the advisor answers it."""
-    ctx = wf._turn_context(state, turn=turn.number, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=turn.number, execution_start=1)
     nudge = guards.memory_flip(turn, state, ctx)
     return None if nudge is None else nudge.text
 
@@ -252,9 +252,9 @@ def test_a_finish_after_a_recovery_is_honoured_at_once() -> None:
     _verify(wf, state, _turn(1), rc=1)
     flip = _turn(2, finish=finish_gates.FinishCall("finish_session", "done"))
     _verify(wf, state, flip, rc=0)
-    ctx = wf._turn_context(state, turn=2, execution_start=1)  # pyright: ignore[reportPrivateUsage]
-    wf._turn_advisors(state, flip, ctx)  # pyright: ignore[reportPrivateUsage]
-    wf._turn_finish_gates(state, flip, ctx)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=2, execution_start=1)
+    wf._turn_advisors(state, flip, ctx)
+    wf._turn_finish_gates(state, flip, ctx)
     assert flip.finish is not None
     assert _notice_texts(flip) == [nudges.MEMORY_FLIP_NUDGE]
 
@@ -268,7 +268,7 @@ def test_the_flip_advisory_follows_the_config_key() -> None:
         _verify(wf, state, _turn(1), rc=1)
         flip = _turn(2)
         _verify(wf, state, flip, rc=0)
-        ctx = wf._turn_context(state, turn=2, execution_start=1)  # pyright: ignore[reportPrivateUsage]
-        wf._turn_advisors(state, flip, ctx)  # pyright: ignore[reportPrivateUsage]
+        ctx = wf._turn_context(state, turn=2, execution_start=1)
+        wf._turn_advisors(state, flip, ctx)
         assert _notice_texts(flip) == sent
         assert state.memory.flip_nudged is bool(sent)

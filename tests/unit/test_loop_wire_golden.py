@@ -287,7 +287,7 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
         ),
     )
     initial = {"role": "user", "content": [{"type": "text", "text": f"TASK:\n{_TASK}\n\nBegin."}]}
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="SYSTEM",
         conversation=loop_conversation.Conversation.from_wire([initial]),
         tool_calls=0,

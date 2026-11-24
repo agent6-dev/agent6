@@ -16,7 +16,7 @@ import pytest
 from agent6.config import Config
 from agent6.sessions import event_log, ipc
 from agent6.tools import dispatch, mcp_client, operator_prompts, tool_errors
-from tests.unit.test_mcp_client import _fake_server_argv  # pyright: ignore[reportPrivateUsage]
+from tests.unit.test_mcp_client import _fake_server_argv
 
 
 def _manager() -> mcp_client.MCPManager:

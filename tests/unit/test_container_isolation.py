@@ -98,7 +98,7 @@ def test_filling_the_table_alone_changes_nothing(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(container, "discover", never)
     env = detect.probed_environment()
     assert detect.resolve_isolation(cfg.sandbox.isolation, env) == "none"
-    assert stamps._policy_stamp(cfg, "none").isolation == "none"  # pyright: ignore[reportPrivateUsage]
+    assert stamps._policy_stamp(cfg, "none").isolation == "none"
 
 
 def test_container_resolves_to_the_launchers_none_branch_without_host_probes() -> None:
@@ -113,9 +113,9 @@ def test_container_resolves_to_the_launchers_none_branch_without_host_probes() -
 
 def test_the_manifest_keeps_the_word_container(tmp_path: pathlib.Path) -> None:
     """A container run's policy stamp says container, not the launcher's level inside."""
-    stamp = stamps._policy_stamp(_cfg(), "none")  # pyright: ignore[reportPrivateUsage]
+    stamp = stamps._policy_stamp(_cfg(), "none")
     assert stamp.isolation == "container" and stamp.network == "host"
-    assert stamps._policy_stamp(_cfg(), "").isolation == "container"  # pyright: ignore[reportPrivateUsage]
+    assert stamps._policy_stamp(_cfg(), "").isolation == "container"
 
 
 @pytest.mark.parametrize(
@@ -286,7 +286,7 @@ def test_exec_refuses_under_container_isolation(
             session_id="r1", policy=manifest.PolicyStamp(isolation="container", network="host")
         ),
     )
-    assert net_cmds._launch_policy(saved, Config.model_validate({}), None) is None  # pyright: ignore[reportPrivateUsage]
+    assert net_cmds._launch_policy(saved, Config.model_validate({}), None) is None
     assert "runtime's own exec" in capsys.readouterr().err
 
 

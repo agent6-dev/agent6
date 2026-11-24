@@ -27,11 +27,11 @@ def test_extra_body_value_completer_offers_routing_presets() -> None:
     from agent6.ui.cli import completers as cli_completers
 
     args = argparse.Namespace(key="providers.openrouter.extra_body")
-    out = cli_completers._complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
+    out = cli_completers._complete_config_values("", args)
     assert '{ provider = { sort = "throughput" } }' in out
     # a non-extra_body key is unaffected
     enum_args = argparse.Namespace(key="sandbox.isolation")
-    assert cli_completers._complete_config_values("", enum_args) == [  # pyright: ignore[reportPrivateUsage]
+    assert cli_completers._complete_config_values("", enum_args) == [
         "auto",
         "full",
         "partial",
@@ -54,9 +54,9 @@ def test_profile_value_completer_offers_profile_names(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     monkeypatch.chdir(tmp_path)
     args = argparse.Namespace(key="agent6.preset")
-    out = cli_completers._complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
+    out = cli_completers._complete_config_values("", args)
     assert "review" in out and "myteam" in out
-    assert cli_completers._complete_config_values("re", args) == ["review"]  # pyright: ignore[reportPrivateUsage]
+    assert cli_completers._complete_config_values("re", args) == ["review"]
 
 
 def test_config_key_completer_offers_user_profile_paths(
@@ -70,17 +70,14 @@ def test_config_key_completer_offers_user_profile_paths(
     (gdir / "agent6" / "config.toml").write_text("[presets.myteam.review]\npanel_size = 2\n")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     monkeypatch.chdir(tmp_path)
-    out = cli_completers._complete_config_keys("presets.")  # pyright: ignore[reportPrivateUsage]
+    out = cli_completers._complete_config_keys("presets.")
     assert any(k.startswith("presets.myteam.review.") for k in out)
     assert not any(k.startswith("presets.review") for k in out)
     # the selector is offered under its own table, never inside a preset
-    assert "agent6.preset" in cli_completers._complete_config_keys("agent6.")  # pyright: ignore[reportPrivateUsage]
+    assert "agent6.preset" in cli_completers._complete_config_keys("agent6.")
     assert not any(".agent6." in k for k in out)
     # a bare TAB (empty prefix) is not flooded with the generated paths
-    assert not any(
-        k.startswith("presets.")
-        for k in cli_completers._complete_config_keys("")  # pyright: ignore[reportPrivateUsage]
-    )
+    assert not any(k.startswith("presets.") for k in cli_completers._complete_config_keys(""))
 
 
 @pytest.mark.parametrize("command", ["get", "set", "show", "unset"])
@@ -96,7 +93,7 @@ def test_mapping_key_completion_offers_the_table_and_its_entries(
     monkeypatch.chdir(tmp_path)
     assert write.set_config_value(tmp_path, "skills.state.alpha", '"enabled"') is None
     args = argparse.Namespace(config_command=command)
-    keys = completers._complete_config_keys("skills.state", parsed_args=args)  # pyright: ignore[reportPrivateUsage]
+    keys = completers._complete_config_keys("skills.state", parsed_args=args)
     assert keys == ["skills.state", "skills.state.alpha"]
 
 
@@ -118,11 +115,11 @@ def test_parallel_models_completer_completes_after_last_comma(
 
     monkeypatch.setattr(config_layer, "load_effective", _eff)
     monkeypatch.setattr(choices, "route_choices", _routes)
-    assert completers._complete_parallel_models("w/gpt") == [  # pyright: ignore[reportPrivateUsage]
+    assert completers._complete_parallel_models("w/gpt") == [
         "w/gpt-5",
         "w/gpt-5-mini",
     ]
-    assert completers._complete_parallel_models("w/opus,w/gpt") == [  # pyright: ignore[reportPrivateUsage]
+    assert completers._complete_parallel_models("w/opus,w/gpt") == [
         "w/opus,w/gpt-5",
         "w/opus,w/gpt-5-mini",
     ]
@@ -212,12 +209,12 @@ def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: path
         "notify.on_event",
         "git.run_repo_hooks",
     ):
-        assert cc._reject_machine_protected(key, m) is not None, key  # pyright: ignore[reportPrivateUsage]
+        assert cc._reject_machine_protected(key, m) is not None, key
     # Benign overlay keys stay writable (the forbid is surgical); a sandbox key is bounded by
     # the operator's config when the machine is checked or run, not refused at the write.
-    assert cc._reject_machine_protected("sandbox.run_commands", m) is None  # pyright: ignore[reportPrivateUsage]
-    assert cc._reject_machine_protected("git.commit.name", m) is None  # pyright: ignore[reportPrivateUsage]
-    assert cc._reject_machine_protected("review.panel_size", m) is None  # pyright: ignore[reportPrivateUsage]
+    assert cc._reject_machine_protected("sandbox.run_commands", m) is None
+    assert cc._reject_machine_protected("git.commit.name", m) is None
+    assert cc._reject_machine_protected("review.panel_size", m) is None
 
 
 def test_write_machine_refuses_an_invalid_spec_and_writes_nothing(
@@ -228,7 +225,7 @@ def test_write_machine_refuses_an_invalid_spec_and_writes_nothing(
     target = tmp_path / "m.asm.toml"
     target.write_text(_GOOD, encoding="utf-8")
 
-    err = cc._write_machine(target, _GOOD, _BAD)  # pyright: ignore[reportPrivateUsage]
+    err = cc._write_machine(target, _GOOD, _BAD)
 
     assert err is not None  # the invalid machine was caught (not silently left)
     assert target.read_text(encoding="utf-8") == _GOOD  # and never reached the file
@@ -243,7 +240,7 @@ def test_write_machine_writes_a_valid_spec(
     edited = _GOOD + "# edited\n"
 
     # prior_text=_GOOD makes _machine_is_valid true, so the edited spec is loaded.
-    assert cc._write_machine(target, _GOOD, edited) is None  # pyright: ignore[reportPrivateUsage]
+    assert cc._write_machine(target, _GOOD, edited) is None
     assert target.read_text(encoding="utf-8") == edited
 
 
@@ -906,7 +903,7 @@ def test_config_fix_skips_an_entry_another_writer_already_fixed(
         return layer.ConfigDiagnosis(removable=(stale,) if calls["n"] == 1 else (), blocked=None)
 
     monkeypatch.setattr(config_layer, "find_invalid_entries", _diag)
-    cc._cmd_config_fix(machine=None)  # pyright: ignore[reportPrivateUsage]
+    cc._cmd_config_fix(machine=None)
 
     assert 'run_commands = "ask"' in cfg.read_text(encoding="utf-8"), (
         "the concurrent writer's value was deleted by a stale diagnosis"
@@ -939,11 +936,11 @@ def test_config_fix_removes_a_nan_entry_instead_of_claiming_valid(
 def test_equal_tolerating_nan_matches_nan_at_every_depth() -> None:
     import math
 
-    assert cc._equal_tolerating_nan(math.nan, math.nan)  # pyright: ignore[reportPrivateUsage]
-    assert cc._equal_tolerating_nan({"x": math.nan}, {"x": math.nan})  # pyright: ignore[reportPrivateUsage]
-    assert cc._equal_tolerating_nan([1.0, math.nan], [1.0, math.nan])  # pyright: ignore[reportPrivateUsage]
-    assert not cc._equal_tolerating_nan({"x": math.nan}, {"x": 1.0})  # pyright: ignore[reportPrivateUsage]
-    assert not cc._equal_tolerating_nan([math.nan], [math.nan, math.nan])  # pyright: ignore[reportPrivateUsage]
+    assert cc._equal_tolerating_nan(math.nan, math.nan)
+    assert cc._equal_tolerating_nan({"x": math.nan}, {"x": math.nan})
+    assert cc._equal_tolerating_nan([1.0, math.nan], [1.0, math.nan])
+    assert not cc._equal_tolerating_nan({"x": math.nan}, {"x": 1.0})
+    assert not cc._equal_tolerating_nan([math.nan], [math.nan, math.nan])
 
 
 def test_config_set_names_the_flag_file_that_shadows_the_write(
@@ -1048,9 +1045,7 @@ def test_config_unset_on_an_mcp_server_names_the_verb_that_removes_it(
         encoding="utf-8",
     )
 
-    rc = cc._cmd_config_unset(  # pyright: ignore[reportPrivateUsage]
-        "mcp.servers.calc", repo=False, machine=None, config_paths=(cfg,)
-    )
+    rc = cc._cmd_config_unset("mcp.servers.calc", repo=False, machine=None, config_paths=(cfg,))
 
     assert rc == 2
     assert "agent6 mcp remove calc" in capsys.readouterr().err
@@ -1063,9 +1058,7 @@ def test_config_unset_on_an_unknown_key_matches_show_and_get(
     cfg = tmp_path / "config.toml"
     cfg.write_text("[agent6]\nconfig_version = 1\n", encoding="utf-8")
 
-    rc = cc._cmd_config_unset(  # pyright: ignore[reportPrivateUsage]
-        "mcp.servers.nope", repo=False, machine=None, config_paths=(cfg,)
-    )
+    rc = cc._cmd_config_unset("mcp.servers.nope", repo=False, machine=None, config_paths=(cfg,))
 
     assert rc == 2
     assert capsys.readouterr().err == (
@@ -1092,9 +1085,7 @@ def test_config_unset_repairs_a_config_that_no_longer_loads(
         encoding="utf-8",
     )
 
-    rc = cc._cmd_config_unset(  # pyright: ignore[reportPrivateUsage]
-        "compaction.summarize_at_chars", repo=False, machine=None
-    )
+    rc = cc._cmd_config_unset("compaction.summarize_at_chars", repo=False, machine=None)
 
     assert rc == 0
     assert "summarize_at_chars" not in (cfg_home / "agent6" / "config.toml").read_text(

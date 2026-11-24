@@ -49,7 +49,7 @@ def _leaf_paths(model: pydantic.BaseModel, prefix: str = "") -> set[str]:
         if isinstance(value, pydantic.BaseModel):
             leaves |= _leaf_paths(value, f"{path}.")
         elif isinstance(value, dict) and value:
-            for key, entry in value.items():  # pyright: ignore[reportUnknownVariableType]
+            for key, entry in value.items():
                 if isinstance(entry, pydantic.BaseModel):
                     leaves |= _leaf_paths(entry, f"{path}.{key}.")
                 else:

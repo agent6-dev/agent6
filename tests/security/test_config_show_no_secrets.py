@@ -13,7 +13,7 @@ import pathlib
 
 import pytest
 
-from agent6.ui.cli import config_cmds  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import config_cmds
 
 _SECRET = "sk-super-secret-do-not-print"
 _ENV_SECRET = "env-secret-also-hidden"

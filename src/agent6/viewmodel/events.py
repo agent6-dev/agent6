@@ -170,7 +170,7 @@ def _reviewer_index(raw: dict[str, Any]) -> int | None:
 def call_args(raw: Mapping[str, Any]) -> dict[str, Any]:
     """Return a tool.call row's argument preview; an older journal keys it `args`."""
     args = raw.get("args_preview", raw.get("args"))
-    return args if isinstance(args, dict) else {}  # pyright: ignore[reportUnknownVariableType]
+    return args if isinstance(args, dict) else {}
 
 
 _OUTCOME_KEYS = (
@@ -242,7 +242,7 @@ def _amount(value: object) -> float:
 
 def _cap(value: object) -> float | None:
     """Return a recorded cap; None when the row carries none."""
-    return None if value is None else float(value)  # pyright: ignore[reportArgumentType]
+    return None if value is None else float(value)  # pyrefly: ignore[bad-argument-type]
 
 
 def _account_reading(raw: dict[str, Any]) -> journal.AccountReading | None:

@@ -20,7 +20,7 @@ from agent6.vcs.git import read as git_read
 
 
 @pytest.fixture(autouse=True)
-def _reset_policy(monkeypatch: pytest.MonkeyPatch) -> None:  # pyright: ignore[reportUnusedFunction]
+def _reset_policy(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(child_env, "_provider_key_env", set())  # module-level state
 
 

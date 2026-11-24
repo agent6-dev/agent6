@@ -207,7 +207,7 @@ def test_the_child_is_kept_out_of_the_escapee_sweep(tmp_path: pathlib.Path) -> N
         tools=TOOLS,
     )
     pid = _spawns(cap)[0]["pid"]
-    assert pid in jail_mod._own_detached  # pyright: ignore[reportPrivateUsage]
+    assert pid in jail_mod._own_detached
     provider.close()
 
 
@@ -1389,7 +1389,7 @@ def test_the_child_stdout_is_read_buffered(tmp_path: pathlib.Path) -> None:
     binary, _ = _install(tmp_path, {"turns": [[_round(text="x")]]})
     provider = _provider(binary)
     provider.call(system="s", messages=USER0, tools=TOOLS)
-    session = provider._cell[0]  # pyright: ignore[reportPrivateUsage]
+    session = provider._cell[0]
     assert session is not None
     assert isinstance(session.proc.stdout, io.BufferedReader)
     provider.close()

@@ -95,9 +95,9 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pat
 
 
 def _resumed() -> list[dict[str, Any]]:
-    ts = fold_tests._ts  # pyright: ignore[reportPrivateUsage]
+    ts = fold_tests._ts
     return [
-        *fold_tests._journal(),  # pyright: ignore[reportPrivateUsage]
+        *fold_tests._journal(),
         {"type": "session.resume", "ts": ts(100), "execution_id": "e2", "turn": 2},
         {
             "type": "session.stop",
@@ -129,7 +129,7 @@ def test_cursor_tree_is_private_and_handed_back_under_sudo(
     monkeypatch.setattr(os, "chown", chown)
     state = paths.state_dir(repo)
     paths.mkdir_for_real_user(state)
-    _write_session(repo, "run-a", fold_tests._journal())  # pyright: ignore[reportPrivateUsage]
+    _write_session(repo, "run-a", fold_tests._journal())
     chowned.clear()
     previous = os.umask(umask)
     try:
@@ -148,7 +148,7 @@ def test_an_export_posts_every_signal_and_a_rerun_resends_only_the_metrics(
     repo: pathlib.Path,
 ) -> None:
     """Spans and logs go once, under per-signal cursors; the cumulative metrics go every time."""
-    first = fold_tests._journal()  # pyright: ignore[reportPrivateUsage]
+    first = fold_tests._journal()
     size_a = _write_session(repo, "run-a", first)
     size_b = _write_session(repo, "run-b", _resumed())
     collector = _Collector()
@@ -168,8 +168,8 @@ def test_an_export_posts_every_signal_and_a_rerun_resends_only_the_metrics(
     assert resource["agent6.export.scope"] == {"stringValue": "repository"}
     assert len(resource["agent6.repo"]["stringValue"]) == 16
     assert str(repo) not in json.dumps(collector.requests)
-    spans_a = len(fold_tests._run(first)[1])  # pyright: ignore[reportPrivateUsage]
-    spans_b = len(fold_tests._run(_resumed())[1])  # pyright: ignore[reportPrivateUsage]
+    spans_a = len(fold_tests._run(first)[1])
+    spans_b = len(fold_tests._run(_resumed())[1])
     assert (report.sessions, report.spans, report.metric_posts) == (2, spans_a + spans_b, 1)
     assert report.logs > 0 and report.notes == ()
     metrics = collector.requests[-1][2]["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
@@ -177,7 +177,7 @@ def test_an_export_posts_every_signal_and_a_rerun_resends_only_the_metrics(
     (point,) = sessions_total["sum"]["dataPoints"]
     assert point["asDouble"] == 2.0
     # The cumulative window starts at the earliest journal event, the same on every run.
-    first_ns = telemetry_records.event_ns(fold_tests._ts(0))  # pyright: ignore[reportPrivateUsage]
+    first_ns = telemetry_records.event_ns(fold_tests._ts(0))
     assert point["startTimeUnixNano"] == str(first_ns)
     assert _cursors(repo) == {
         "run-a.logs.offset": size_a,
@@ -306,7 +306,7 @@ def test_export_remasks_stored_settings_before_posting(repo: pathlib.Path, captu
 
 def test_a_signal_enabled_later_still_gets_the_history(repo: pathlib.Path) -> None:
     """A metrics-only run moves no span or log cursor, so traces turned on afterwards backfill."""
-    _write_session(repo, "run-a", fold_tests._journal())  # pyright: ignore[reportPrivateUsage]
+    _write_session(repo, "run-a", fold_tests._journal())
     only_metrics = _Collector()
     export.export(repo, _config(traces="none", logs="none"), post=only_metrics.post)
     assert only_metrics.paths() == ["metrics"] and _cursors(repo) == {}
@@ -323,7 +323,7 @@ def test_a_retryable_status_is_retried_and_a_refusal_ends_the_destination(
     repo: pathlib.Path,
 ) -> None:
     """A 503 and a dropped connection are retried; a 401 turns the endpoint off, cursors held."""
-    _write_session(repo, "run-a", fold_tests._journal())  # pyright: ignore[reportPrivateUsage]
+    _write_session(repo, "run-a", fold_tests._journal())
     retried = _Collector(statuses=[503, 200], raise_first=1)
     report = export.export(repo, _config(), post=retried.post, sleep=retried.sleep)
     assert retried.paths()[:3] == ["traces", "traces", "traces"]
@@ -346,7 +346,7 @@ def test_a_retryable_status_is_retried_and_a_refusal_ends_the_destination(
 
 def test_a_failed_last_batch_keeps_its_cursor_for_the_next_run(repo: pathlib.Path) -> None:
     """When the batch that ends the journal is refused, nothing marks it delivered."""
-    ts = fold_tests._ts  # pyright: ignore[reportPrivateUsage]
+    ts = fold_tests._ts
     rows: list[dict[str, Any]] = [{"type": "session.start", "ts": ts(0), "execution_id": "e"}]
     for i in range(export.BATCH):
         rows.append({"type": "tool.call", "ts": ts(i), "name": "read_file", "call_id": i})
@@ -367,7 +367,7 @@ def test_a_failed_last_batch_keeps_its_cursor_for_the_next_run(repo: pathlib.Pat
 def test_the_prometheus_textfile_is_readable_and_nothing_is_dialled(
     repo: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
-    _write_session(repo, "run-a", fold_tests._journal())  # pyright: ignore[reportPrivateUsage]
+    _write_session(repo, "run-a", fold_tests._journal())
     out = tmp_path / "node" / "agent6.prom"
     out.parent.mkdir()
 
@@ -390,7 +390,7 @@ def test_follow_posts_as_the_journal_grows_and_drains_when_told_to_stop(
     """A follow delivers while the run writes, not only at its end; a stop drains the rest."""
     monkeypatch.setattr(export, "FLUSH_S", 0.0)
     monkeypatch.setattr(export, "POLL_S", 0.01)
-    ts = fold_tests._ts  # pyright: ignore[reportPrivateUsage]
+    ts = fold_tests._ts
     _write_session(repo, "run-a", [{"type": "session.start", "ts": ts(0), "execution_id": "e"}])
     journal = paths.state_dir(repo) / "sessions" / "runs" / "run-a" / "logs.jsonl"
     collector = _Collector()
@@ -444,7 +444,7 @@ def test_follow_posts_as_the_journal_grows_and_drains_when_told_to_stop(
 
 def test_a_live_runs_unfinished_work_is_not_sent_as_incomplete(repo: pathlib.Path) -> None:
     """Under a live worker the open spans wait for their end; a dead worker's are sent closed."""
-    ts = fold_tests._ts  # pyright: ignore[reportPrivateUsage]
+    ts = fold_tests._ts
     rows = [
         {"type": "session.start", "ts": ts(0), "execution_id": "e"},
         {"type": "tool.call", "ts": ts(1), "name": "f", "call_id": 1},
@@ -482,8 +482,8 @@ def test_a_resumed_crash_delivers_each_span_once_per_endpoint(
 ) -> None:
     """A delivered close is not replayed at resume; a refused close gets the journaled end."""
     monkeypatch.setattr(export, "BATCH", batch)
-    ts = fold_tests._ts  # pyright: ignore[reportPrivateUsage]
-    crashed = fold_tests._journal()[:3]  # pyright: ignore[reportPrivateUsage]
+    ts = fold_tests._ts
+    crashed = fold_tests._journal()[:3]
     _write_session(repo, "run-a", crashed)
     config = _config(logs="none", metrics="none")
     first = _Collector(statuses=[] if accepted else [401])
@@ -536,7 +536,7 @@ def test_legacy_cursors_keep_their_offset_and_close_marker(
     """An offset with an optional closed word needs no additional cursor fields."""
     import hashlib
 
-    rows = fold_tests._journal()[:3]  # pyright: ignore[reportPrivateUsage]
+    rows = fold_tests._journal()[:3]
     size = _write_session(repo, "run-a", rows)
     config = _config(logs="none", metrics="none")
     key = hashlib.sha256(config.endpoint.encode()).hexdigest()[:16]
@@ -724,7 +724,7 @@ def test_the_cli_refuses_an_unselected_export_and_names_a_missing_header_secret(
 ) -> None:
     """The command says what to set, where a header's value is missing, and what it delivered."""
     monkeypatch.chdir(repo)
-    _write_session(repo, "run-a", fold_tests._journal())  # pyright: ignore[reportPrivateUsage]
+    _write_session(repo, "run-a", fold_tests._journal())
     nothing = tmp_path / "nothing.toml"
     nothing.write_text("[telemetry]\n", encoding="utf-8")
     assert main(["--config", str(nothing), "telemetry", "export"]) == 2

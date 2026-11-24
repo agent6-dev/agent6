@@ -56,7 +56,7 @@ def test_run_view_announces_a_dead_workers_question(
             await waits.wait_for(pilot, lambda: app.worker_lost, "dead worker")
             await waits.wait_for(pilot, lambda: bool(app.state.questions), "question fold")
             for _ in range(3):
-                app._tick()  # pyright: ignore[reportPrivateUsage]
+                app._tick()
                 await pilot.pause()
             assert not isinstance(app.screen, modals.QuestionModal)
             assert [n for n in app.notices if "Run menu: Answer a question" in n] == [

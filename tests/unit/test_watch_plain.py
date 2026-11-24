@@ -74,7 +74,7 @@ def test_raw_watch_exits_when_the_worker_is_gone(
         pytest.fail("raw watch slept after the worker was gone")
 
     monkeypatch.setattr(viewmodel_tail.time, "sleep", _must_not_sleep)
-    assert plan_watch._cmd_watch_plain(target, since=0) == 1  # pyright: ignore[reportPrivateUsage]
+    assert plan_watch._cmd_watch_plain(target, since=0) == 1
     assert "crashed or killed" in capsys.readouterr().err
 
 
@@ -100,7 +100,7 @@ def test_raw_watch_returns_nonzero_when_the_log_disappears_before_the_end(
     monkeypatch.setattr(process, "worker_is_alive", _worker_is_alive)
     monkeypatch.setattr(viewmodel_tail.time, "sleep", _remove_log)
 
-    assert plan_watch._cmd_watch_plain(target, since=0) == 1  # pyright: ignore[reportPrivateUsage]
+    assert plan_watch._cmd_watch_plain(target, since=0) == 1
     assert "is gone" in capsys.readouterr().err
 
 
@@ -129,7 +129,7 @@ def test_raw_watch_preserves_a_partial_replay_line(
 
     monkeypatch.setattr(process, "worker_is_alive", _worker_is_alive)
     monkeypatch.setattr(viewmodel_tail.time, "sleep", _append_tail)
-    assert plan_watch._cmd_watch_plain(target, since=5) == 0  # pyright: ignore[reportPrivateUsage]
+    assert plan_watch._cmd_watch_plain(target, since=5) == 0
     out = capsys.readouterr().out
     assert "model.call" in out
     assert "actor='worker'" in out

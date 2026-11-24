@@ -29,7 +29,7 @@ _SECRET = "AWS_SECRET_ACCESS_KEY=leaked-xyz"
 def _dispatcher(
     root: pathlib.Path, cfg: Config, isolation: str = "none"
 ) -> dispatch.ToolDispatcher:
-    return dispatch.ToolDispatcher(root=root, config=cfg, isolation=isolation)  # pyright: ignore[reportArgumentType]
+    return dispatch.ToolDispatcher(root=root, config=cfg, isolation=isolation)  # pyrefly: ignore[bad-argument-type]
 
 
 def _hiding(root: pathlib.Path, *rel: str) -> Config:

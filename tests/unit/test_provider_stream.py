@@ -450,7 +450,7 @@ def test_a_malformed_2xx_body_normalizes_at_the_transport_seam() -> None:
             return {"choices": [{}]}
 
     with pytest.raises(provider_types.ProviderError, match="did not match the wire shape"):
-        call._decode_success({}, _Resp(), transcript=provider_types.TranscriptAttempt())  # pyright: ignore[reportPrivateUsage, reportArgumentType]
+        call._decode_success({}, _Resp(), transcript=provider_types.TranscriptAttempt())  # pyrefly: ignore[bad-argument-type]
 
 
 def test_a_raising_abort_poll_leaves_the_watchdog_alive(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -157,7 +157,7 @@ def _messages_provider(tracker: agent6_budget.BudgetTracker) -> AnthropicProvide
 
 def _serve(monkeypatch: pytest.MonkeyPatch, lines: list[str]) -> None:
     def fake_stream(method: str, url: str, **_kwargs: Any) -> Any:
-        return messages_reply._FakeStream(lines)  # pyright: ignore[reportPrivateUsage]
+        return messages_reply._FakeStream(lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
 
@@ -172,7 +172,7 @@ def test_each_attempt_bills_its_own_search_once(
     cfg = _cfg()
     _list_prices(monkeypatch, cfg, "0.01")
     tracker = _tracker(cfg)
-    lines = messages_reply._stream_of(messages_reply._CONTENT)  # pyright: ignore[reportPrivateUsage]
+    lines = messages_reply._stream_of(messages_reply._CONTENT)
     cut = next(i for i, line in enumerate(lines) if '"index": 3' in line) - 1
     call: dict[str, Any] = {
         "system": "s",
@@ -201,7 +201,7 @@ def test_a_responses_stream_bills_its_distinct_search_calls(
     """A finished stream and one cut after its search item both count the search once."""
     cfg = _cfg({"backend": "responses", "base_url": "https://api.openai.com/v1"})
     tracker = _tracker(cfg)
-    lines = responses_reply._stream_lines()  # pyright: ignore[reportPrivateUsage]
+    lines = responses_reply._stream_lines()
     _serve(monkeypatch, lines if complete else lines[:6])
     provider = responses.ResponsesProvider(
         api_key="k",

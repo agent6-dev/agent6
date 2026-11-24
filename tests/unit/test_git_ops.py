@@ -798,8 +798,8 @@ def test_git_runs_under_a_pinned_locale(tmp_path: pathlib.Path) -> None:
     def capture(argv: object, **kwargs: object) -> object:
         env = kwargs.get("env")
         if isinstance(env, dict):
-            seen.update({k: v for k, v in env.items() if k in ("LC_ALL", "LANG")})  # pyright: ignore[reportUnknownArgumentType]
-        return real(argv, **kwargs)  # pyright: ignore[reportArgumentType, reportCallIssue]
+            seen.update({k: v for k, v in env.items() if k in ("LC_ALL", "LANG")})
+        return real(argv, **kwargs)  # pyrefly: ignore[no-matching-overload]
 
     with mock.patch.object(git_command.subprocess, "Popen", capture):
         git_command.run(tmp_path, "stash", "list", check=False)
@@ -2069,7 +2069,7 @@ def test_worktree_tree_retries_an_add_over_a_file_that_vanished(
             if len(adds) == 1:
                 (tmp_path / "scratch.txt").unlink()
                 raise errors.GitError("git add -A failed: fatal: unable to stat 'scratch'")
-        return real_run(cwd, *args, **kwargs)  # pyright: ignore[reportArgumentType]
+        return real_run(cwd, *args, **kwargs)  # pyrefly: ignore[bad-argument-type]
 
     monkeypatch.setattr(git_command, "run", flaky_run)
     tree = git_read.worktree_tree(tmp_path, "HEAD", ())
@@ -2080,7 +2080,7 @@ def test_worktree_tree_retries_an_add_over_a_file_that_vanished(
     def always_failing(cwd: pathlib.Path, *args: str, **kwargs: object) -> kinds.CommandResult:
         if args[:2] == ("add", "-A"):
             raise errors.GitError("git add -A failed: fatal: unable to stat 'gone'")
-        return real_run(cwd, *args, **kwargs)  # pyright: ignore[reportArgumentType]
+        return real_run(cwd, *args, **kwargs)  # pyrefly: ignore[bad-argument-type]
 
     monkeypatch.setattr(git_command, "run", always_failing)
     with pytest.raises(errors.GitError, match="unable to stat"):
@@ -2181,7 +2181,7 @@ def test_the_dirty_tree_lists_name_each_file_on_one_line() -> None:
     from agent6.app import preflight, resume
 
     forged = "y\n[agent6] forged line"
-    note = resume._first_four(frozenset({forged}))  # pyright: ignore[reportPrivateUsage]
+    note = resume._first_four(frozenset({forged}))
     assert "\n" not in note
     refusal = preflight.dirty_tree_refusal([forged])
     assert not [line for line in refusal.splitlines() if line.startswith("[agent6]")]
@@ -2271,7 +2271,7 @@ def test_a_merge_tree_this_git_cannot_run_names_the_floor(
                 duration_s=0.0,
                 exec_failed=False,
             )
-        return real_run(cwd, *args, **kw)  # pyright: ignore[reportArgumentType]
+        return real_run(cwd, *args, **kw)  # pyrefly: ignore[bad-argument-type]
 
     monkeypatch.setattr(git_command, "run", old_git)
     monkeypatch.setattr(git_policy, "installed_version", lambda: (2, 39, 0))

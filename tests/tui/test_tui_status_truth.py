@@ -539,9 +539,9 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
             await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             row = app._conv.query_one("#conv-resume", composer.ResumeOptions)
             await waits.wait_for(pilot, lambda: row.display, "the resume row")
-            preset_options = row.query_one("#resume-preset", widgets.Select)._options  # pyright: ignore[reportPrivateUsage]
+            preset_options = row.query_one("#resume-preset", widgets.Select)._options
             assert [value for _label, value in preset_options] == ["", "no_review", "review"]
-            model_options = row.query_one("#resume-model", widgets.Select)._options  # pyright: ignore[reportPrivateUsage]
+            model_options = row.query_one("#resume-model", widgets.Select)._options
             assert [value for _label, value in model_options] == ["", "o/a", "o/b"]
             row.query_one("#resume-preset", widgets.Select).value = "no_review"
             row.query_one("#resume-model", widgets.Select).value = "o/b"
@@ -611,7 +611,7 @@ def test_resume_row_keeps_a_config_selected_recorded_model(
             await waits.wait_for(pilot, lambda: row.display, "resume row")
             picker = row.query_one("#resume-model", widgets.Select)
             assert picker.value == ""
-            options = picker._options  # pyright: ignore[reportPrivateUsage]
+            options = picker._options
             assert str(options[0][0]) == "o/recorded (as recorded)"
             assert "o/configured" in [value for _, value in options]
 
@@ -643,7 +643,7 @@ def test_the_resume_rows_name_what_a_bare_resume_runs_under(
     def labels(row: composer.ResumeOptions) -> tuple[str, str]:
         """Each picker's first entry, whatever is picked."""
         pickers = (row.query_one(f"#resume-{name}", widgets.Select) for name in ("preset", "model"))
-        first = tuple(str(p._options[0][0]) for p in pickers)  # pyright: ignore[reportPrivateUsage]
+        first = tuple(str(p._options[0][0]) for p in pickers)
         return first[0], first[1]
 
     async def scenario() -> None:
@@ -718,7 +718,7 @@ def test_dead_worker_stream_pane_drops_stale_partial_text(tmp_path: pathlib.Path
                 ),
                 "the partial response",
             )
-            app._dash.render_heartbeat()  # pyright: ignore[reportPrivateUsage]
+            app._dash.render_heartbeat()
             await pilot.pause()
             body = str(app._dash.query_one("#stream-body", widgets.Static).render())
             assert "worker exited without finishing" in body
@@ -812,11 +812,10 @@ def test_a_dead_workers_open_call_settles_into_the_scrollback(tmp_path: pathlib.
             app._heartbeat_at = 0.0
             app._tick()
             await waits.wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
-            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+            app._conv._poll()
             await pilot.pause()
             body = "\n".join(
-                str(w.content)
-                for w in app._conv.query(".conv-chunk").results(widgets.Static)  # pyright: ignore[reportPrivateUsage]
+                str(w.content) for w in app._conv.query(".conv-chunk").results(widgets.Static)
             )
             assert "→ run_command  sleep 60" in body
             assert "no result (the run died)" in body
@@ -899,12 +898,8 @@ def test_dead_run_pops_no_approval_modal(tmp_path: pathlib.Path) -> None:
 
 def _approval_ready(app: tui_app.Agent6TUI) -> bool:
     # The conversation screen renders an approval inline, the composer keeping focus.
-    bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
-    return (
-        _screen_is(app, "_conv")
-        and waits.answerable(app._conv)  # pyright: ignore[reportPrivateUsage]
-        and app.focused is bar
-    )
+    bar = app._conv.query_one("#conv-input", composer.SteerInput)
+    return _screen_is(app, "_conv") and waits.answerable(app._conv) and app.focused is bar
 
 
 def test_screen_probe_tolerates_an_empty_stack(tmp_path: pathlib.Path) -> None:
@@ -914,7 +909,7 @@ def test_screen_probe_tolerates_an_empty_stack(tmp_path: pathlib.Path) -> None:
         _ = app.screen
     assert _screen_is(app, "_conv") is False
     # The app's own probe answers None instead of raising.
-    assert app._screen_or_none() is None  # pyright: ignore[reportPrivateUsage]
+    assert app._screen_or_none() is None
 
 
 def test_live_run_still_gets_the_inline_approval(tmp_path: pathlib.Path) -> None:
@@ -943,13 +938,13 @@ def test_answer_after_death_reports_instead_of_writing(tmp_path: pathlib.Path) -
             app._heartbeat_at = 0.0
             app._tick()
             await waits.wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
-            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+            app._conv._poll()
             await pilot.pause()
             await pilot.press("a")  # the row is gone: the key answers nothing
             await pilot.pause()
             assert not (d / "approvals" / "ap1.answer").exists()
-            assert not app._conv.query(composer.ApprovalRow)  # pyright: ignore[reportPrivateUsage]
-            item = app._conv.query_one("#conv-approval", widgets.Static)  # pyright: ignore[reportPrivateUsage]
+            assert not app._conv.query(composer.ApprovalRow)
+            item = app._conv.query_one("#conv-approval", widgets.Static)
             assert "approval pending when the run ended" in str(item.render())
 
     asyncio.run(scenario())
@@ -1213,11 +1208,11 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
             conv_live = app._conv.query_one("#conv-live", widgets.Static)
             conv_bar = app._conv.query_one("#conv-input", composer.SteerInput)
             await waits.wait_for(pilot, lambda: conv_bar.mode == "steer", "the starting steer bar")
-            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+            app._conv._poll()
             assert not conv_live.display
-            conv_spin = app._conv._spin  # pyright: ignore[reportPrivateUsage]
-            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
-            assert app._conv._spin == conv_spin  # pyright: ignore[reportPrivateUsage]
+            conv_spin = app._conv._spin
+            app._conv._poll()
+            assert app._conv._spin == conv_spin
             dash_spin = app.spin
             app._heartbeat_at = 0.0
             app._tick()
@@ -1238,9 +1233,9 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
             app._heartbeat_at = 0.0
             app._tick()
             assert app.spin == dash_spin + 1
-            conv_spin = app._conv._spin  # pyright: ignore[reportPrivateUsage]
-            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
-            assert app._conv._spin == conv_spin + 1  # pyright: ignore[reportPrivateUsage]
+            conv_spin = app._conv._spin
+            app._conv._poll()
+            assert app._conv._spin == conv_spin + 1
 
             append({"type": "model.result", "actor": "worker", "ok": True, "text": "done"})
             await waits.wait_for(
@@ -1256,7 +1251,7 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
             app._heartbeat_at = 0.0
             app._tick()
             assert app.spin == dash_spin
-            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+            app._conv._poll()
             assert not conv_live.display
 
             append(
@@ -1285,15 +1280,15 @@ def test_waiting_run_pane_says_waiting_not_working(tmp_path: pathlib.Path) -> No
         async with app.run_test(size=(140, 40)) as pilot:
             # Deny writes only the bridge file; no answer event lands, so the run stays waiting.
             await waits.wait_for(pilot, lambda: _approval_ready(app), "the approval row")
-            await waits.focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
+            await waits.focus_answers(app._conv, pilot)
             await pilot.press("d")
             await _open_dash(app, pilot)
             await waits.wait_for(pilot, lambda: app.dir_status[0] == "waiting", "the waiting word")
 
             def pane() -> str:
                 # The fold lands in the reader thread, so the pane follows a tick later.
-                app._tick()  # pyright: ignore[reportPrivateUsage]
-                return str(app._dash.query_one("#stream-body", widgets.Static).render())  # pyright: ignore[reportPrivateUsage]
+                app._tick()
+                return str(app._dash.query_one("#stream-body", widgets.Static).render())
 
             await waits.wait_for(
                 pilot, lambda: "waiting · needs answer" in pane(), "the waiting pane"
@@ -1385,7 +1380,7 @@ def test_dashboard_header_says_where_the_changes_are(
             before = str(app._dash.query_one("#top", widgets.Static).render())
             manifest["merged"] = {"into": "main", "sha": tip, "tip": tip}
             (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-            app._dash.query_one(dashboard_header.RunHeader)._branch_recheck_at = 0.0  # pyright: ignore[reportPrivateUsage]
+            app._dash.query_one(dashboard_header.RunHeader)._branch_recheck_at = 0.0
             app._dash.render_heartbeat()
             await pilot.pause()
             after = str(app._dash.query_one("#top", widgets.Static).render())

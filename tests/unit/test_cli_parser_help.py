@@ -21,8 +21,8 @@ from agent6.ui.cli import parser as cli_parser
 
 def _subparsers(parser: argparse.ArgumentParser) -> Iterator[tuple[str, argparse.ArgumentParser]]:
     """Yield (name, parser) for every subparser, recursively."""
-    for action in parser._actions:  # pyright: ignore[reportPrivateUsage]
-        if isinstance(action, argparse._SubParsersAction):  # pyright: ignore[reportPrivateUsage]
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
             for name, sub in action.choices.items():
                 yield name, sub
                 yield from _subparsers(sub)
@@ -36,14 +36,14 @@ def _find(parser: argparse.ArgumentParser, name: str) -> argparse.ArgumentParser
 
 
 def _option(parser: argparse.ArgumentParser, flag: str) -> argparse.Action:
-    for action in parser._actions:  # pyright: ignore[reportPrivateUsage]
+    for action in parser._actions:
         if flag in action.option_strings:
             return action
     raise AssertionError(f"no option {flag!r}")
 
 
 def _positional(parser: argparse.ArgumentParser, dest: str) -> argparse.Action:
-    for action in parser._actions:  # pyright: ignore[reportPrivateUsage]
+    for action in parser._actions:
         if not action.option_strings and action.dest == dest:
             return action
     raise AssertionError(f"no positional {dest!r}")
@@ -56,7 +56,7 @@ def test_root_banner_names_only_the_writes_handed_back(
     monkeypatch.setattr(paths, "is_root", lambda: True)
     user = paths.RealUser(1234, 5678, "operator", tmp_path, via_sudo=True)
     monkeypatch.setattr(paths, "effective_user", lambda: user)
-    assert common._enforce_root_policy(True) is None  # pyright: ignore[reportPrivateUsage]
+    assert common._enforce_root_policy(True) is None
     text = capsys.readouterr().err
     assert "config and secrets writes" in text
     assert "state dir at run teardown" in text
@@ -160,11 +160,7 @@ def test_the_command_list_is_grouped_and_complete() -> None:
     Every command sits in exactly one group.
     """
     parser = cli_parser.build_parser()
-    action = next(
-        a
-        for a in parser._actions  # pyright: ignore[reportPrivateUsage]
-        if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
-    )
+    action = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
     grouped = [name for _, names in cli_parser.COMMAND_GROUPS for name in names]
     assert sorted(grouped) == sorted(action.choices)
     assert len(grouped) == len(set(grouped))
@@ -207,15 +203,8 @@ def test_every_subparser_has_a_description() -> None:
 def test_the_command_list_shows_one_sentence_per_command() -> None:
     """Each entry in `agent6 --help` is its command's first sentence."""
     parser = cli_parser.build_parser()
-    action = next(
-        a
-        for a in parser._actions  # pyright: ignore[reportPrivateUsage]
-        if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
-    )
-    listed = {
-        c.dest: c.help or ""
-        for c in action._choices_actions  # pyright: ignore[reportPrivateUsage]
-    }
+    action = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    listed = {c.dest: c.help or "" for c in action._choices_actions}
     assert listed, "no commands listed"
     for name, entry in listed.items():
         description = action.choices[name].description or ""
@@ -261,7 +250,7 @@ def test_no_em_dashes_in_parser_help() -> None:
     for _name, sub in [("agent6", parser), *_subparsers(parser)]:
         if "—" in (sub.description or ""):
             offenders.append(sub.prog)
-        for action in sub._actions:  # pyright: ignore[reportPrivateUsage]
+        for action in sub._actions:
             if "—" in (action.help or ""):
                 offenders.append(f"{sub.prog} {action.dest}")
     assert offenders == []

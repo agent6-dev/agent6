@@ -93,7 +93,7 @@ def test_completion_only_fires_on_a_line_that_is_one_word() -> None:
     """Tab completes a directive only where the whole line is one `/`-word, in every completer."""
     import inspect
 
-    from agent6.ui.cli import menu_input  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import menu_input
     from agent6.ui.tui import composer
     from agent6.ui.web import page
 

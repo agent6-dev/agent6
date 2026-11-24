@@ -121,9 +121,7 @@ def test_the_web_merge_runs_in_this_process_under_the_requests_git_policy(
 
     repo = tmp_path / "repo"
     repo.mkdir()
-    merge_tests._setup_run(  # pyright: ignore[reportPrivateUsage]
-        repo, "run-WEB111", commits=[("a.txt", "a\n", "agent6 turn 1: add a")]
-    )
+    merge_tests._setup_run(repo, "run-WEB111", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     overlay = tmp_path / "hooks.toml"
     overlay.write_text("[git]\nrun_repo_hooks = true\n", encoding="utf-8")
 
@@ -145,10 +143,7 @@ def test_the_web_merge_runs_in_this_process_under_the_requests_git_policy(
 
     assert end == merge_plan.MergeEnd(0), message
     assert message.startswith("merged agent6/run-WEB111 into main (squash) -> ")
-    assert (
-        merge_tests._git(repo, "show", "main:a.txt")  # pyright: ignore[reportPrivateUsage]
-        == "a"
-    )
+    assert merge_tests._git(repo, "show", "main:a.txt") == "a"
     assert during == [git_policy.GitPolicy(honor_repo_hooks=True, honor_repo_drivers=False)]
     assert git_policy.current_policy() == before == git_policy.GitPolicy()
 
@@ -157,11 +152,11 @@ def test_the_web_merge_reports_a_refusal_as_the_cli_words_it(tmp_path: pathlib.P
     """A refused merge reaches the page with its reason, not as a bare exit code."""
     from tests.unit import test_cli_sessions_merge as merge_tests
 
-    merge_tests._setup_run(  # pyright: ignore[reportPrivateUsage]
+    merge_tests._setup_run(
         tmp_path, "run-WEB222", commits=[("a.txt", "a\n", "agent6 turn 1: add a")]
     )
-    merge_tests._git(tmp_path, "checkout", "-q", "-b", "side")  # pyright: ignore[reportPrivateUsage]
-    merge_tests._git(tmp_path, "branch", "-D", "main")  # pyright: ignore[reportPrivateUsage]
+    merge_tests._git(tmp_path, "checkout", "-q", "-b", "side")
+    merge_tests._git(tmp_path, "branch", "-D", "main")
 
     end, message = actions.merge_run(tmp_path, "run-WEB222", "squash")
 
@@ -180,7 +175,7 @@ def test_a_web_merge_conflict_names_the_branch_a_resume_merges_in(
     """A conflict answered the page with a terminal command and nothing it could act on."""
     from tests.unit import test_cli_sessions_merge as merge_tests
 
-    merge_tests._setup_run(  # pyright: ignore[reportPrivateUsage]
+    merge_tests._setup_run(
         tmp_path, "run-WEB333", commits=[("README.md", "theirs\n", "agent6 turn 1")]
     )
     run = layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="run-WEB333")
@@ -190,7 +185,7 @@ def test_a_web_merge_conflict_names_the_branch_a_resume_merges_in(
         recorded["worktree_git_dir"] = str(tmp_path / ".git")
         run.manifest_path.write_text(json.dumps(recorded), encoding="utf-8")
     (tmp_path / "README.md").write_text("ours\n", encoding="utf-8")
-    merge_tests._git(tmp_path, "commit", "-qam", "main moved")  # pyright: ignore[reportPrivateUsage]
+    merge_tests._git(tmp_path, "commit", "-qam", "main moved")
 
     end, message = actions.merge_run(tmp_path, "run-WEB333", "")
 

@@ -731,7 +731,7 @@ def test_create_write_failure_ends_the_watchable_log_as_failed(
         [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
     )
 
-    real_write = _create._write_scripts  # pyright: ignore[reportPrivateUsage]
+    real_write = _create._write_scripts
 
     def denied(base_dir: pathlib.Path, scripts: dict[str, str]) -> None:
         if str(base_dir).startswith(str(tmp_path / "state")):
@@ -1257,9 +1257,9 @@ def test_bundle_scripts_follow_no_linked_directory_below_scripts(tmp_path: pathl
     (bundle / "scripts" / "lib").symlink_to(outside)
     (bundle / "scripts" / "run.py").symlink_to(victim)
 
-    _create._write_scripts(bundle, {"scripts/run.py": "VALUE = 1"})  # pyright: ignore[reportPrivateUsage]
+    _create._write_scripts(bundle, {"scripts/run.py": "VALUE = 1"})
     with pytest.raises(path_safety.ContainmentError):
-        _create._write_scripts(bundle, {"scripts/lib/mod.py": "VALUE = 2"})  # pyright: ignore[reportPrivateUsage]
+        _create._write_scripts(bundle, {"scripts/lib/mod.py": "VALUE = 2"})
 
     assert not (bundle / "scripts" / "run.py").is_symlink()
     assert (bundle / "scripts" / "run.py").read_text(encoding="utf-8") == "VALUE = 1\n"
@@ -1277,7 +1277,7 @@ def test_reading_a_draft_follows_no_linked_scripts_directory(tmp_path: pathlib.P
     workspace.mkdir()
     (workspace / "scripts").symlink_to(outside)
 
-    assert _create._read_scripts(workspace) == {}  # pyright: ignore[reportPrivateUsage]
+    assert _create._read_scripts(workspace) == {}
 
 
 def test_create_writes_scripts_before_the_machine_file(
@@ -1296,7 +1296,7 @@ def test_create_writes_scripts_before_the_machine_file(
         ],
     )
 
-    real_write = _create._write_scripts  # pyright: ignore[reportPrivateUsage]
+    real_write = _create._write_scripts
 
     def boom(base_dir: pathlib.Path, scripts: dict[str, str]) -> None:
         if base_dir == tmp_path:  # the publish call; scratch validation proceeds

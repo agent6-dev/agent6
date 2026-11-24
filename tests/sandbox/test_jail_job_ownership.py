@@ -301,7 +301,7 @@ def test_close_reports_unconfirmed_cleanup_after_supervisor_loss(tmp_path: pathl
         kinds.JailPolicy(cwd=tmp_path, argv=(), isolation="none", network="host")
     )
     session.start_background(("/bin/sleep", "60"))
-    proc = session._proc  # pyright: ignore[reportPrivateUsage]
+    proc = session._proc
     proc.kill()
     proc.wait(timeout=5)
     error = session.close()
@@ -321,7 +321,7 @@ def test_closing_a_hung_transport_leaves_job_reapers_alive(
     try:
         session.start_background(tuple(daemon(marker, hold=True, double_fork=True)))
         pid = wait_file(marker)
-        os.kill(session._proc.pid, signal.SIGSTOP)  # pyright: ignore[reportPrivateUsage]
+        os.kill(session._proc.pid, signal.SIGSTOP)
         error = session.close()
         assert error and "unknown" in str(error)
         deadline = time.monotonic() + 7

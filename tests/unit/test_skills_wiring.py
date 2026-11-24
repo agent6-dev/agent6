@@ -376,11 +376,11 @@ class TestWorkflowLoadSkills:
         wf = loop.Harness(
             chain=run_chain.RunChain(tmp_path),
             config=cfg,
-            provider=None,  # pyright: ignore[reportArgumentType]
+            provider=None,  # pyrefly: ignore[bad-argument-type]
             dispatcher=d,
             logger=lambda _: None,
         )
-        resolved = wf._load_skills()  # pyright: ignore[reportPrivateUsage]
+        resolved = wf._load_skills()
         assert resolved is not None
         assert [s.name for s in resolved.enabled] == ["tidy"]
 
@@ -401,4 +401,4 @@ class TestWorkflowLoadSkills:
             mode="plan",
             plan_output_path=tmp_path / "plan.md",
         )
-        assert wf._load_skills() is None  # pyright: ignore[reportPrivateUsage]
+        assert wf._load_skills() is None

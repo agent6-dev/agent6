@@ -218,9 +218,9 @@ class _GroupedCommandsHelp(argparse.RawDescriptionHelpFormatter):
 
     def _format_action(self, action: argparse.Action) -> str:
         """Return the grouped rendering for the subparsers action, argparse's for every other."""
-        if not isinstance(action, argparse._SubParsersAction) or action.dest != "command":  # pyright: ignore[reportPrivateUsage]
+        if not isinstance(action, argparse._SubParsersAction) or action.dest != "command":
             return super()._format_action(action)
-        entries = {a.dest: a for a in action._choices_actions}  # pyright: ignore[reportPrivateUsage]
+        entries = {a.dest: a for a in action._choices_actions}
         parts: list[str] = []
         for title, names in COMMAND_GROUPS:
             parts.append(f"{'':{self._current_indent}}{title}:\n")
@@ -266,7 +266,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         dest="command", required=True, metavar="<command>", title="commands"
     )
     # The commands lead the help page; the options follow them.
-    groups = parser._action_groups  # pyright: ignore[reportPrivateUsage]
+    groups = parser._action_groups
     groups.insert(0, groups.pop())
 
     run_args._add_run_parser(sub)

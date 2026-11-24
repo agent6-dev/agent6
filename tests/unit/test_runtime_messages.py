@@ -24,7 +24,7 @@ def test_api_key_prompt_says_masked_without_echoing_the_secret(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(sys, "stdin", io.StringIO("sample-secret\n"))
-    assert connect._prompt_api_key("local") == "sample-secret"  # pyright: ignore[reportPrivateUsage]
+    assert connect._prompt_api_key("local") == "sample-secret"
     output = capsys.readouterr()
     assert "input masked, blank for none" in output.err
     assert "Captured key: 13 chars." in output.out

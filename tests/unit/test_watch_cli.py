@@ -346,7 +346,7 @@ def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
     def _no_prompt(*a: object, **k: object) -> None:
         raise AssertionError("a dead worker's prompt must not be re-asked")
 
-    monkeypatch.setattr(pw._CliFrontEnd, "handle", _no_prompt)  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(pw._CliFrontEnd, "handle", _no_prompt)
     result: list[int] = []
     t = threading.Thread(target=lambda: result.append(main(["attach", "dead-run"])), daemon=True)
     t.start()

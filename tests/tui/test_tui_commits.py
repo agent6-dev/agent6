@@ -41,7 +41,7 @@ def test_a_selected_commit_relabels_the_details_as_of_that_turn(
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await pilot.pause()
-            dash = app._dash  # pyright: ignore[reportPrivateUsage]
+            dash = app._dash
             dash.diff.commit_sel = "a" * 40
             dash.render_state()
             await pilot.pause()
@@ -89,7 +89,7 @@ def test_the_top_line_counts_tasks_as_of_the_selected_commit(
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await pilot.pause()
-            dash = app._dash  # pyright: ignore[reportPrivateUsage]
+            dash = app._dash
             dash.render_state()
             await pilot.pause()
             live = str(dash.query_one("#top", widgets.Static).render())
@@ -122,11 +122,11 @@ def test_the_diff_pane_keeps_saying_the_model_owns_git(
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await pilot.pause()
-            dash = app._dash  # pyright: ignore[reportPrivateUsage]
+            dash = app._dash
             dash.render_state()
             await pilot.pause()
             assert dash.query_one("#diff").border_title == "diff · the model owns git"
-            dash._selected_task_id = "t1"  # pyright: ignore[reportPrivateUsage]
+            dash._selected_task_id = "t1"
             dash.render_state()
             await pilot.pause()
             assert dash.query_one("#diff").border_title == "diff · the model owns git"

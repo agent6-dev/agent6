@@ -327,8 +327,8 @@ def test_a_repeat_stop_after_the_launcher_died_keeps_the_recorded_exit(
         while job.status().running and time.monotonic() < deadline:
             time.sleep(0.05)
         assert job.status().returncode == 0
-        os.kill(session._proc.pid, signal.SIGKILL)  # pyright: ignore[reportPrivateUsage]
-        session._proc.wait(timeout=5)  # pyright: ignore[reportPrivateUsage]
+        os.kill(session._proc.pid, signal.SIGKILL)
+        session._proc.wait(timeout=5)
         assert "jail session" in job.stop()
         assert job.status().returncode == 0
     finally:

@@ -21,12 +21,12 @@ def _execution(root: pathlib.Path) -> background.BackgroundShells:
 def test_a_resumed_execution_does_not_reuse_an_id(tmp_path: pathlib.Path) -> None:
     root = tmp_path / "shells"
     first = _execution(root)
-    first._open_log("bg1")  # pyright: ignore[reportPrivateUsage]
+    first._open_log("bg1")
 
     resumed = _execution(root)
-    assert resumed._seq == 1, "the new execution must continue the numbering"  # pyright: ignore[reportPrivateUsage]
+    assert resumed._seq == 1, "the new execution must continue the numbering"
     # The next id it hands out is free, so opening its log succeeds.
-    resumed._open_log("bg2")  # pyright: ignore[reportPrivateUsage]
+    resumed._open_log("bg2")
 
 
 def test_the_scan_covers_a_execution_that_died_between_its_two_dirs(tmp_path: pathlib.Path) -> None:
@@ -37,16 +37,16 @@ def test_the_scan_covers_a_execution_that_died_between_its_two_dirs(tmp_path: pa
     root = tmp_path / "shells"
     (root / "logs").mkdir(parents=True)
     (root / "bg7").mkdir()  # shell dir only
-    assert _execution(root)._seq == 7  # pyright: ignore[reportPrivateUsage]
+    assert _execution(root)._seq == 7
 
     other = tmp_path / "other"
     (other / "logs" / "bg4").mkdir(parents=True)  # log dir only
-    assert _execution(other)._seq == 4  # pyright: ignore[reportPrivateUsage]
+    assert _execution(other)._seq == 4
 
 
 def test_a_fresh_run_still_starts_at_one(tmp_path: pathlib.Path) -> None:
     """The negative control: nothing recorded means nothing to continue from."""
-    assert _execution(tmp_path / "shells")._seq == 0  # pyright: ignore[reportPrivateUsage]
+    assert _execution(tmp_path / "shells")._seq == 0
 
 
 def test_unrelated_names_are_not_mistaken_for_ids(tmp_path: pathlib.Path) -> None:
@@ -54,4 +54,4 @@ def test_unrelated_names_are_not_mistaken_for_ids(tmp_path: pathlib.Path) -> Non
     (root / "logs").mkdir(parents=True)
     for junk in ("bgus", "bg", "background", "bg1x"):
         (root / junk).mkdir()
-    assert _execution(root)._seq == 0  # pyright: ignore[reportPrivateUsage]
+    assert _execution(root)._seq == 0

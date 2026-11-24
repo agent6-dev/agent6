@@ -102,8 +102,8 @@ def test_losing_the_supervisor_ends_its_jobs_and_reads_unknown(target: conftest.
     try:
         handle = session.start_background(("/bin/sh", "-c", f'echo $$ > "{marker}"; exec sleep 60'))
         pid = _pid_of(session, marker)
-        session._proc.kill()  # pyright: ignore[reportPrivateUsage]
-        session._proc.wait(timeout=10)  # pyright: ignore[reportPrivateUsage]
+        session._proc.kill()
+        session._proc.wait(timeout=10)
         with pytest.raises(jail.JailUnavailableError, match="protocol failed"):
             session.status_background(handle)
         assert _wait_gone(pid), "a job outlived its dead supervisor"
@@ -118,7 +118,7 @@ def test_a_closed_channel_ends_the_jobs_as_a_dead_agent_would(target: conftest.T
     try:
         session.start_background(("/bin/sh", "-c", f'echo $$ > "{marker}"; exec sleep 60'))
         pid = _pid_of(session, marker)
-        proc = session._proc  # pyright: ignore[reportPrivateUsage]
+        proc = session._proc
         assert proc.stdin is not None
         proc.stdin.close()
         assert proc.wait(timeout=10) == 0, "the launcher outlived its channel"

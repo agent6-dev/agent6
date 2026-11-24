@@ -30,7 +30,7 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> loop.Harness:
         wf, "_git_status", lambda: types.SimpleNamespace(is_clean=clean, head_sha=head)
     )
     object.__setattr__(wf, "emit", _quiet)
-    wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+    wf.config = types.SimpleNamespace(  # pyrefly: ignore[bad-assignment]
         sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
             standing_patience=-1,
@@ -51,7 +51,7 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> loop.Harness:
     # Gate presence reads the command policy first: a gate someone may run.
     wf.dispatcher = types.SimpleNamespace(
         last_verification=None, verify_withheld=False, command_policy=lambda: "allow"
-    )  # pyright: ignore[reportAttributeAccessIssue]
+    )
     return wf
 
 
@@ -61,7 +61,7 @@ def _quiet(*_a: object, **_k: object) -> None:
 
 def _patch_git(monkeypatch: pytest.MonkeyPatch, wf: loop.Harness) -> None:
     def _status(_root: object, **_kw: object) -> object:
-        return wf._git_status()  # pyright: ignore[reportAttributeAccessIssue]
+        return wf._git_status()  # pyrefly: ignore[missing-attribute]
 
     monkeypatch.setattr("agent6.vcs.git.read.status", _status)
 
@@ -110,7 +110,7 @@ def _start_wf(
 ) -> tuple[loop.Harness, mock.MagicMock]:
     wf = _wf()
     wf.mode = "run"
-    wf.config.harness.verify.when = when  # pyright: ignore[reportAttributeAccessIssue]
+    wf.config.harness.verify.when = when  # pyrefly: ignore[bad-assignment]
     dispatcher = mock.MagicMock(
         last_verification=None, execution_id="execution", verify_withheld=False
     )
@@ -173,7 +173,7 @@ def test_a_red_start_gate_past_the_base_reaches_the_model_and_records_no_baselin
     state = _state()
     wf = _wf(clean=False)
     wf.mode = "run"
-    wf.config.harness.verify.when = "finish"  # pyright: ignore[reportAttributeAccessIssue]
+    wf.config.harness.verify.when = "finish"
     dispatcher = mock.MagicMock(
         last_verification=None, execution_id="execution", verify_withheld=False
     )
@@ -319,7 +319,7 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
     wf = loop.Harness.__new__(loop.Harness)
     wf.chain = run_chain.RunChain(pathlib.Path("/nonexistent"))
     wf.mode = "plan"
-    wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+    wf.config = types.SimpleNamespace(  # pyrefly: ignore[bad-assignment]
         sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
             standing_patience=-1,
@@ -339,7 +339,7 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
     )
     wf.dispatcher = types.SimpleNamespace(
         last_verification=None, verify_withheld=False, command_policy=lambda: "allow"
-    )  # pyright: ignore[reportAttributeAccessIssue]
+    )
     state = _state()
     state.verify.baseline_ok = False
     state.verify.last_ok = False
@@ -391,7 +391,7 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: path
     """
     wf = _wf()
     wf.mode = "run"
-    wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+    wf.config = types.SimpleNamespace(  # pyrefly: ignore[bad-assignment]
         sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
             standing_patience=-1,
@@ -476,7 +476,7 @@ def test_a_red_start_gate_is_not_the_runs_own_failure(monkeypatch: pytest.Monkey
 def test_verify_at_start_off_runs_no_start_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     """`harness.verify.at_start = false` keeps a slow gate from running before the first turn."""
     state, (wf, dispatcher) = _state(), _start_wf(1)
-    wf.config.harness.verify.at_start = False  # pyright: ignore[reportAttributeAccessIssue]
+    wf.config.harness.verify.at_start = False
     _patch_git(monkeypatch, wf)
     assert wf.gate.start_baseline(state) == []
     dispatcher.run_verify.assert_not_called()

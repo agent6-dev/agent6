@@ -107,7 +107,7 @@ def test_dead_runtime_client_never_falls_back(
                 str(survived),
             )
         )
-        proc = session._proc  # pyright: ignore[reportPrivateUsage]
+        proc = session._proc
         assert proc.pid != supervisor.pid
         assert pathlib.Path(f"/proc/{proc.pid}/comm").read_text().strip() != "launcher"
         proc.kill()
@@ -133,7 +133,7 @@ def test_inflight_client_death_without_stdout_eof(
     finish = target.home / "finish"
     with conftest.opened(target) as session:
         (supervisor,) = supervisors
-        proc = session._proc  # pyright: ignore[reportPrivateUsage]
+        proc = session._proc
         assert proc.stdout is not None and proc.pid != supervisor.pid
         with (
             os.fdopen(os.dup(proc.stdout.fileno()), "rb", buffering=0) as stdout,

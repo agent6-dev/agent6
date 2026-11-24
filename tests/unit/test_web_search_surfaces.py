@@ -34,11 +34,11 @@ def _journal(
     """Make one instrumented worker call against the recorded reply and return its journal."""
 
     def fake_post(url: str, **_kwargs: Any) -> Any:
-        body = {"content": reply._CONTENT, "stop_reason": "tool_use", "usage": reply._USAGE}  # pyright: ignore[reportPrivateUsage]
-        return reply._FakeResponse(body)  # pyright: ignore[reportPrivateUsage]
+        body = {"content": reply._CONTENT, "stop_reason": "tool_use", "usage": reply._USAGE}
+        return reply._FakeResponse(body)
 
     def fake_stream(method: str, url: str, **_kwargs: Any) -> Any:
-        return reply._FakeStream(reply._stream_of(reply._CONTENT))  # pyright: ignore[reportPrivateUsage]
+        return reply._FakeStream(reply._stream_of(reply._CONTENT))
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     monkeypatch.setattr(httpx2, "stream", fake_stream)
@@ -90,8 +90,8 @@ def test_a_reply_with_no_search_journals_what_it_did_before(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A reply with no search emits no search event and leaves the budget row's keys alone."""
-    monkeypatch.setattr(reply, "_CONTENT", reply._CONTENT[:1])  # pyright: ignore[reportPrivateUsage]
-    monkeypatch.setitem(reply._USAGE, "server_tool_use", {"web_search_requests": 0})  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(reply, "_CONTENT", reply._CONTENT[:1])
+    monkeypatch.setitem(reply._USAGE, "server_tool_use", {"web_search_requests": 0})
     events = _journal(monkeypatch, tmp_path, streamed=False)
     assert "model.web_search" not in {e["type"] for e in events}
     assert "web_searches" not in events[-1]
@@ -126,7 +126,7 @@ def test_every_surface_shows_the_search_line(search_event: dict[str, Any]) -> No
     console.close()
     assert f"── {_LINE} ──" in out.getvalue()
 
-    drawn = tui_conversation._item_renderables(items[0], detail="collapsed")  # pyright: ignore[reportPrivateUsage]
+    drawn = tui_conversation._item_renderables(items[0], detail="collapsed")
     assert drawn[0].plain == f"── {_LINE} ──"
 
     web = web_model.conversation_items([search_event])
@@ -166,5 +166,5 @@ def test_sessions_show_carries_the_search_count(tmp_path: pathlib.Path) -> None:
     logs = tmp_path / "logs.jsonl"
     logs.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
     scan = session_log.scan_session_log(logs)
-    assert sessions_show._usage_line(scan) == "in=5 out=7 searches=2  usage $0.01"  # pyright: ignore[reportPrivateUsage]
+    assert sessions_show._usage_line(scan) == "in=5 out=7 searches=2  usage $0.01"
     assert session_view.budget_dict(scan.budget)["execution"]["web_searches"] == 2

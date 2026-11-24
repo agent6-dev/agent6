@@ -464,7 +464,7 @@ def _bridge(answer: dict[str, Any]) -> runner.RunBridge:
     def _answer(*_a: object, **_kw: object) -> dict[str, Any]:
         return answer
 
-    bridge.server.request = _answer  # pyright: ignore[reportAttributeAccessIssue]
+    bridge.server.request = _answer  # pyrefly: ignore[method-assign]
     return bridge
 
 
@@ -728,7 +728,7 @@ def test_a_closed_editor_stops_waiting_for_answers_it_will_never_get() -> None:
     )
     asking.start()
     for _ in range(100):  # let it register its pending slot
-        if server._pending:  # pyright: ignore[reportPrivateUsage]
+        if server._pending:
             break
         threading.Event().wait(0.01)
     server.abandon_pending()
@@ -739,7 +739,7 @@ def test_a_closed_editor_stops_waiting_for_answers_it_will_never_get() -> None:
 def test_a_request_started_after_the_editor_left_returns_at_once() -> None:
     """A permission request registered after the editor is gone is woken, not parked."""
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    server._gone = True  # pyright: ignore[reportPrivateUsage]
+    server._gone = True
     answered: list[dict[str, Any]] = []
     asking = threading.Thread(
         target=lambda: answered.append(
@@ -765,7 +765,7 @@ def test_cancelling_while_permission_is_open_releases_the_execution() -> None:
             time.sleep(0.01)
         return {}
 
-    bridge.server.request = _wait  # pyright: ignore[reportAttributeAccessIssue]
+    bridge.server.request = _wait  # pyrefly: ignore[bad-assignment, method-assign]
     session = session_mod.Session(acp_id="s", cwd=pathlib.Path("/x"), execution_live=True)
     answered: list[str | None] = []
     asker = threading.Thread(
@@ -874,7 +874,7 @@ def test_a_permission_reply_cannot_win_over_an_observed_cancel(
 
     def _reply_after_cancel(message: dict[str, Any]) -> None:
         cancelled.set()
-        server._handle(  # pyright: ignore[reportPrivateUsage]
+        server._handle(
             json.dumps(
                 {
                     "jsonrpc": "2.0",
@@ -904,7 +904,7 @@ def test_a_question_with_no_buttons_is_not_put_to_the_editor() -> None:
         sent.append((method, params))
         return {}
 
-    bridge.server.request = _record  # pyright: ignore[reportAttributeAccessIssue]
+    bridge.server.request = _record  # pyrefly: ignore[method-assign]
     session = session_mod.Session(acp_id="s", cwd=pathlib.Path("/x"))
     assert (
         bridge.ask(
@@ -930,7 +930,7 @@ def test_an_approval_closes_the_tool_call_it_announced() -> None:
     """
     sent: list[dict[str, Any]] = []
     bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "0"}})
-    bridge.server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    bridge.server.notify_raw = sent.append  # pyrefly: ignore[bad-assignment, method-assign]
     session = session_mod.Session(acp_id="s", cwd=pathlib.Path("/x"))
     assert (
         bridge.ask(
@@ -962,12 +962,12 @@ def test_a_malformed_frame_cannot_answer_an_outstanding_approval() -> None:
     )
     asking.start()
     for _ in range(100):
-        if server._pending:  # pyright: ignore[reportPrivateUsage]
+        if server._pending:
             break
         threading.Event().wait(0.01)
-    req_id = next(iter(server._pending))  # pyright: ignore[reportPrivateUsage]
-    assert server._deliver(req_id, {"id": req_id}) is False  # pyright: ignore[reportPrivateUsage]
-    assert server._pending, "the slot was consumed by a non-response"  # pyright: ignore[reportPrivateUsage]
+    req_id = next(iter(server._pending))
+    assert server._deliver(req_id, {"id": req_id}) is False
+    assert server._pending, "the slot was consumed by a non-response"
     server.abandon_pending()
     asking.join(timeout=5.0)
 
@@ -981,7 +981,7 @@ def test_the_approval_dialog_is_scrubbed_too() -> None:
         sent.append(params)
         return {}
 
-    bridge.server.request = _record  # pyright: ignore[reportAttributeAccessIssue]
+    bridge.server.request = _record  # pyrefly: ignore[bad-assignment, method-assign]
     session = session_mod.Session(acp_id="s", cwd=pathlib.Path("/x"))
     bridge.ask(
         session,
@@ -1391,14 +1391,14 @@ def test_a_late_tail_keeps_its_own_execution(tmp_path: pathlib.Path) -> None:
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    server.notify_raw = sent.append  # pyrefly: ignore[bad-assignment, method-assign]
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
     log = tmp_path / "logs.jsonl"
     log.write_text("", encoding="utf-8")
     done = threading.Event()
     tail = threading.Thread(
-        target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
+        target=bridge._stream,
         args=(session, log, done.is_set, False, runner.Announced(execution_id="1")),
         daemon=True,
     )
@@ -1439,14 +1439,14 @@ def test_model_deltas_stream_once_in_journal_order_and_side_calls_stay_hidden(
 
     sent: list[tuple[int, dict[str, Any]]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    server.notify_raw = lambda body: sent.append(  # pyright: ignore[reportAttributeAccessIssue]
+    server.notify_raw = lambda body: sent.append(  # pyrefly: ignore[method-assign]
         (at[0], body)
     )
     monkeypatch.setattr(viewmodel_tail, "tail_events", _events)
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
 
-    bridge._stream(  # pyright: ignore[reportPrivateUsage]
+    bridge._stream(
         session, tmp_path / "logs.jsonl", lambda: True, 0, runner.Announced(execution_id="1")
     )
 
@@ -1470,7 +1470,7 @@ def test_a_dead_workers_open_tool_call_is_settled(tmp_path: pathlib.Path) -> Non
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    server.notify_raw = sent.append  # pyrefly: ignore[bad-assignment, method-assign]
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
     log = tmp_path / "logs.jsonl"
@@ -1478,9 +1478,7 @@ def test_a_dead_workers_open_tool_call_is_settled(tmp_path: pathlib.Path) -> Non
         journal.ToolCall(name="run_command", args_preview={"argv": ["false"]}, call_id=1)
     )
 
-    bridge._stream(  # pyright: ignore[reportPrivateUsage]
-        session, log, lambda: True, False, runner.Announced(execution_id="1")
-    )
+    bridge._stream(session, log, lambda: True, False, runner.Announced(execution_id="1"))
 
     statuses = [message["params"]["update"]["status"] for message in sent]
     assert statuses == ["in_progress", "failed"]
@@ -1851,7 +1849,7 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: pathli
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    server.notify_raw = sent.append  # pyrefly: ignore[bad-assignment, method-assign]
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
     log = tmp_path / "logs.jsonl"
@@ -1865,7 +1863,7 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: pathli
     assert sent == []
     done = threading.Event()
     tail = threading.Thread(
-        target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
+        target=bridge._stream,
         args=(session, log, done.is_set, False, runner.Announced(execution_id="1"), order),
         daemon=True,
     )
@@ -1980,7 +1978,7 @@ def test_a_second_prompt_after_a_recorded_execution_with_no_snapshot_starts_a_ne
     monkeypatch.setattr(run, "run_task", _run_task)
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    server.notify_raw = sent.append  # pyrefly: ignore[bad-assignment, method-assign]
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path)
 
@@ -2009,7 +2007,7 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    server.notify_raw = sent.append  # pyrefly: ignore[bad-assignment, method-assign]
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
     log = tmp_path / "logs.jsonl"
@@ -2033,9 +2031,7 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
         )
     )
 
-    bridge._stream(  # pyright: ignore[reportPrivateUsage]
-        session, log, lambda: True, 0, runner.Announced(execution_id="1")
-    )
+    bridge._stream(session, log, lambda: True, 0, runner.Announced(execution_id="1"))
 
     updates = [m["params"]["update"] for m in sent]
     located = [
@@ -2120,7 +2116,7 @@ def test_a_missing_provider_key_refuses_the_prompt_before_any_state(
     monkeypatch.chdir(repo)
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    server.notify_raw = sent.append  # pyrefly: ignore[bad-assignment, method-assign]
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=repo)
 
@@ -2143,7 +2139,7 @@ def test_the_tail_sends_the_title_the_commands_and_the_usage(tmp_path: pathlib.P
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    server.notify_raw = sent.append  # pyrefly: ignore[bad-assignment, method-assign]
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
     log = tmp_path / "logs.jsonl"
@@ -2151,7 +2147,7 @@ def test_the_tail_sends_the_title_the_commands_and_the_usage(tmp_path: pathlib.P
     done = threading.Event()
     info = updates.RunInfo(acp_session_id="s", window=lambda _p, _m: 1000)
     tail = threading.Thread(
-        target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
+        target=bridge._stream,
         args=(session, log, done.is_set, False, runner.Announced(execution_id="1")),
         kwargs={"info": info},
         daemon=True,
@@ -2222,7 +2218,7 @@ def test_a_streamed_final_answer_is_not_sent_again_as_the_end_summary(
     ]
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    server.notify_raw = sent.append  # pyrefly: ignore[bad-assignment, method-assign]
 
     def _events(*_args: object, **_kwargs: object) -> Iterator[dict[str, Any]]:
         yield from events
@@ -2231,7 +2227,7 @@ def test_a_streamed_final_answer_is_not_sent_again_as_the_end_summary(
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
 
-    bridge._stream(  # pyright: ignore[reportPrivateUsage]
+    bridge._stream(
         session, tmp_path / "logs.jsonl", lambda: True, 0, runner.Announced(execution_id="1")
     )
 
@@ -2259,7 +2255,7 @@ def test_the_editors_own_prompt_is_not_echoed_back_as_a_user_message(
     ]
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    server.notify_raw = sent.append  # pyrefly: ignore[bad-assignment, method-assign]
 
     def _events(*_args: object, **_kwargs: object) -> Iterator[dict[str, Any]]:
         yield from events
@@ -2268,7 +2264,7 @@ def test_the_editors_own_prompt_is_not_echoed_back_as_a_user_message(
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
 
-    bridge._stream(  # pyright: ignore[reportPrivateUsage]
+    bridge._stream(
         session,
         tmp_path / "logs.jsonl",
         lambda: True,
@@ -2293,14 +2289,14 @@ def test_the_tail_stamps_calls_with_the_execution_id_it_reads(tmp_path: pathlib.
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    server.notify_raw = sent.append  # pyrefly: ignore[bad-assignment, method-assign]
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
     log = tmp_path / "logs.jsonl"
     log.write_text("", encoding="utf-8")
     done = threading.Event()
     tail = threading.Thread(
-        target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
+        target=bridge._stream,
         args=(session, log, done.is_set, False, runner.Announced()),
         daemon=True,
     )

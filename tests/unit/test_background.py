@@ -123,7 +123,7 @@ def test_stop_all_closes_every_log_descriptor(
     monkeypatch.setattr(jail_jobs, "start_in_jail", start_in_jail)
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("sleep", "60"), lambda _a, _rw: cast(kinds.JailPolicy, object()))
-    log_fd = shells._get(view.id).log_fd  # pyright: ignore[reportPrivateUsage]
+    log_fd = shells._get(view.id).log_fd
     os.fstat(log_fd)
 
     shells.stop_all()
@@ -197,11 +197,11 @@ def test_read_names_the_size_when_the_byte_cap_cuts_the_output(
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("sleep", "60"), lambda _a, _rw: cast(kinds.JailPolicy, object()))
     log = tmp_path / "shells" / "logs" / view.id / "out.log"
-    log.write_bytes(b"x" * (background._TAIL_BYTES + 1000))  # pyright: ignore[reportPrivateUsage]
+    log.write_bytes(b"x" * (background._TAIL_BYTES + 1000))
 
     _view, output = shells.read(view.id, tail_lines=200)
 
-    total = background._TAIL_BYTES + 1000  # pyright: ignore[reportPrivateUsage]
+    total = background._TAIL_BYTES + 1000
     assert f"{total} bytes total" in output
 
 
@@ -218,7 +218,7 @@ def test_read_drops_the_line_the_byte_cap_cut_through(
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("sleep", "60"), lambda _a, _rw: cast(kinds.JailPolicy, object()))
     log = tmp_path / "shells" / "logs" / view.id / "out.log"
-    cap = background._TAIL_BYTES  # pyright: ignore[reportPrivateUsage]
+    cap = background._TAIL_BYTES
 
     log.write_bytes(b"a" * (cap + 100) + b"\nlast\n")
     _view, output = shells.read(view.id, tail_lines=200)

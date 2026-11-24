@@ -512,7 +512,7 @@ class AnthropicProviderEntry(PricedProviderEntry):
     """
 
     # The narrowing override is sound: the model is frozen, so nothing writes the wider type.
-    backend: Literal["anthropic"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+    backend: Literal["anthropic"] = (  # pyrefly: ignore[bad-override-mutable-attribute]
         pydantic.Field(
             json_schema_extra={"choice_meanings": _BACKEND_MEANINGS},
             description=_BACKEND_DESCRIPTION,
@@ -594,7 +594,7 @@ class OpenAIProviderEntry(_TieredProviderEntry):
     (the deployment name in the URL, the api-version query, the `api-key` header).
     """
 
-    backend: Literal["openai"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+    backend: Literal["openai"] = (  # pyrefly: ignore[bad-override-mutable-attribute]
         pydantic.Field(
             json_schema_extra={"choice_meanings": _BACKEND_MEANINGS},
             description=_BACKEND_DESCRIPTION,
@@ -610,7 +610,7 @@ class ChatGPTProviderEntry(_ProviderBase):
     `base_url` and OpenAI's fixed OAuth authority (the issuer and client id are constants).
     """
 
-    backend: Literal["chatgpt"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+    backend: Literal["chatgpt"] = (  # pyrefly: ignore[bad-override-mutable-attribute]
         pydantic.Field(
             json_schema_extra={"choice_meanings": _BACKEND_MEANINGS},
             description=_BACKEND_DESCRIPTION,
@@ -700,7 +700,7 @@ class ResponsesProviderEntry(_TieredProviderEntry):
     """
 
     idle_compact_s: IdleCompactSeconds = 240
-    backend: Literal["responses"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+    backend: Literal["responses"] = (  # pyrefly: ignore[bad-override-mutable-attribute]
         pydantic.Field(
             json_schema_extra={"choice_meanings": _BACKEND_MEANINGS},
             description=_BACKEND_DESCRIPTION,

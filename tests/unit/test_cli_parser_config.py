@@ -152,8 +152,8 @@ def test_get_completion_offers_no_key_get_rejects(
 
 
 def _subcommands(parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:
-    for action in parser._actions:  # pyright: ignore[reportPrivateUsage]
-        if isinstance(action, argparse._SubParsersAction):  # pyright: ignore[reportPrivateUsage]
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
             return dict(action.choices)
     return {}
 
@@ -270,7 +270,7 @@ def test_bare_default_groups_are_those_whose_default_verb_takes_no_positional() 
         for group, (default, _verbs) in cli_parser._DEFAULT_VERBS.items()
         if not any(
             not a.option_strings and a.dest != "==SUPPRESS=="
-            for a in _subcommands(groups[group])[default]._actions  # pyright: ignore[reportPrivateUsage]
+            for a in _subcommands(groups[group])[default]._actions
         )
     }
     assert bare == cli_parser._BARE_DEFAULT_GROUPS

@@ -240,7 +240,7 @@ def test_a_parent_swapped_before_the_write_truncates_no_host_file(
     real_read = path_safety.read_contained
 
     def swap_after_the_read(*args: object, **kwargs: object) -> str:
-        text = real_read(*args, **kwargs)  # pyright: ignore[reportCallIssue,reportArgumentType]
+        text = real_read(*args, **kwargs)  # pyrefly: ignore[bad-argument-type]
         _swap_parent_for_a_link_out(root, outside)
         return text
 
@@ -320,7 +320,7 @@ def test_a_file_swapped_after_the_check_is_not_parsed_into_the_index(
     outside = tmp_path / "outside.py"
     outside.write_text("def host_only_symbol():\n    pass\n", encoding="utf-8")
 
-    real_parser_for = index.SymbolIndex._parser_for  # pyright: ignore[reportPrivateUsage]
+    real_parser_for = index.SymbolIndex._parser_for
 
     def swap_after_the_check(self: index.SymbolIndex, lang_name: str) -> object:
         bits = real_parser_for(self, lang_name)

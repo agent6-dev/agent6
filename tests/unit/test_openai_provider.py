@@ -334,7 +334,7 @@ def test_base_url_override_and_extra_headers() -> None:
 def test_is_reasoning_model_detects_thinking_models() -> None:
     from agent6.providers import openai as oai
 
-    _is_reasoning_model = oai._is_reasoning_model  # pyright: ignore[reportPrivateUsage]
+    _is_reasoning_model = oai._is_reasoning_model
 
     assert _is_reasoning_model("kimi-k2-thinking")
     assert _is_reasoning_model("deepseek-r1-distill")
@@ -372,8 +372,8 @@ def test_reasoning_floor_covers_kimi_latest_without_the_effort_default() -> None
     """
     from agent6.providers import openai as oai
 
-    needs_headroom = oai._needs_reasoning_headroom  # pyright: ignore[reportPrivateUsage]
-    is_reasoning = oai._is_reasoning_model  # pyright: ignore[reportPrivateUsage]
+    needs_headroom = oai._needs_reasoning_headroom
+    is_reasoning = oai._is_reasoning_model
 
     assert needs_headroom("moonshotai/kimi-latest")  # floored
     assert not is_reasoning("moonshotai/kimi-latest")  # but NOT effort="low"-defaulted

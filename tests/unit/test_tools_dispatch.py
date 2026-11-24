@@ -2056,7 +2056,7 @@ def test_non_json_string_still_fails_validation(tmp_path: pathlib.Path) -> None:
 
 
 def test_under_system_root_classifies_bin_dirs() -> None:
-    from agent6.sandbox import tool_paths  # pyright: ignore[reportPrivateUsage]
+    from agent6.sandbox import tool_paths
 
     assert tool_paths._under_system_root(
         pathlib.Path("/usr/local/bin")
@@ -2956,11 +2956,11 @@ def test_a_bare_dispatchers_tree_omits_hidden_paths(tmp_path: pathlib.Path) -> N
         check=True,
     )
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
-    before = d._verification_tree()  # pyright: ignore[reportPrivateUsage]
+    before = d._verification_tree()
     assert before
     (tmp_path / "secrets").mkdir()
     (tmp_path / "secrets" / "key").write_text("s3cret\n", encoding="utf-8")
-    assert d._verification_tree() == before  # pyright: ignore[reportPrivateUsage]
+    assert d._verification_tree() == before
     blob = subprocess.run(
         ["git", "-C", str(tmp_path), "hash-object", "secrets/key"],
         check=True,
@@ -2972,7 +2972,7 @@ def test_a_bare_dispatchers_tree_omits_hidden_paths(tmp_path: pathlib.Path) -> N
         != 0
     )
     (tmp_path / "scratch.txt").write_text("written during a verify\n", encoding="utf-8")
-    assert d._verification_tree() != before  # pyright: ignore[reportPrivateUsage]
+    assert d._verification_tree() != before
 
 
 @pytest.mark.parametrize(

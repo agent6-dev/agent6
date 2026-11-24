@@ -539,7 +539,7 @@ def test_pause_menu_seeds_recall_from_the_journal(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(steer_menu, "_RECALL", steer_menu._Recall())  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(steer_menu, "_RECALL", steer_menu._Recall())
     seen: list[list[str]] = []
 
     def fake_menu_input(

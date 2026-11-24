@@ -607,7 +607,7 @@ def test_check_sandbox_fails_when_its_config_cannot_be_loaded(
     bad = tmp_path / "bad.toml"
     bad.write_text("not = [valid", encoding="utf-8")
 
-    rc = check_cmds._cmd_check((bad,), section="sandbox")  # pyright: ignore[reportPrivateUsage]
+    rc = check_cmds._cmd_check((bad,), section="sandbox")
 
     out = capsys.readouterr().out
     assert rc == 1
@@ -659,7 +659,7 @@ def test_a_root_grant_covers_the_default_rows() -> None:
         sandbox_paths.Row("--", root, "refused except the paths below"),
         sandbox_paths.Row("--", pathlib.Path("/home/op"), "refused, except the rows under it"),
     )
-    assert sandbox_paths.with_defaults([grant], *defaults) == [grant]  # pyright: ignore[reportPrivateUsage]
+    assert sandbox_paths.with_defaults([grant], *defaults) == [grant]
 
 
 @pytest.mark.parametrize("isolation", ["full", "partial"])
@@ -770,7 +770,7 @@ def test_skipped_network_probe_keeps_the_commands_exit_code(
     _force_profile(monkeypatch, isolation)
     cfg = tmp_path / "check.toml"
     cfg.write_text(f'[sandbox]\nisolation = "{isolation}"\n', encoding="utf-8")
-    rc = check_cmds._cmd_check((cfg,), section="sandbox")  # pyright: ignore[reportPrivateUsage]
+    rc = check_cmds._cmd_check((cfg,), section="sandbox")
     out = capsys.readouterr().out
     assert rc == 0, out
     assert f"[SKIP] jail_blocks_network: {isolation} has no network namespace" in out

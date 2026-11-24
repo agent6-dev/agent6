@@ -43,8 +43,8 @@ def test_loss_after_confirmed_stop_preserves_exit_and_records_missing_output(
         while "before" not in shells.read(view.id, tail_lines=10)[1]:
             assert time.monotonic() < deadline
             time.sleep(0.01)
-        shell = shells._get(view.id)  # pyright: ignore[reportPrivateUsage]
-        handle = shell.job._handle  # pyright: ignore[reportPrivateUsage]
+        shell = shells._get(view.id)
+        handle = shell.job._handle
         (work / "release").touch()
         while session.status_background(handle).running:
             assert time.monotonic() < deadline
@@ -54,10 +54,10 @@ def test_loss_after_confirmed_stop_preserves_exit_and_records_missing_output(
         def lose(
             self: jail_session.JailSession, handle: str, *, offset: int, limit: int
         ) -> jail_session.BackgroundRead:
-            assert shell.job._stopped  # pyright: ignore[reportPrivateUsage]
+            assert shell.job._stopped
             assert shell.job.status().returncode == 0
-            self._proc.kill()  # pyright: ignore[reportPrivateUsage]
-            self._proc.wait(timeout=5)  # pyright: ignore[reportPrivateUsage]
+            self._proc.kill()
+            self._proc.wait(timeout=5)
             return real_read(self, handle, offset=offset, limit=limit)
 
         with monkeypatch.context() as patch:
@@ -111,12 +111,7 @@ def test_job_supervisor_loss_marks_capture_incomplete_after_observed_exit(
             assert time.monotonic() < deadline
             time.sleep(0.01)
         worker = int((tmp_path / "worker").read_text())
-        assert (
-            f"PPid:\t{session._proc.pid}\n"
-            in pathlib.Path(  # pyright: ignore[reportPrivateUsage]
-                f"/proc/{worker}/status"
-            ).read_text()
-        )
+        assert f"PPid:\t{session._proc.pid}\n" in pathlib.Path(f"/proc/{worker}/status").read_text()
         os.kill(worker, signal.SIGKILL)
         view, text = shells.read(view.id, tail_lines=10)
         assert view.returncode == 0 and "before" in text

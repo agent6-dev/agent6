@@ -160,7 +160,7 @@ def test_a_clients_answer_is_delivered_before_its_envelope_is_judged() -> None:
 
     asker = threading.Thread(target=ask, daemon=True)
     asker.start()
-    while "agent6-1" not in server._pending:  # pyright: ignore[reportPrivateUsage]
+    while "agent6-1" not in server._pending:
         pass
     server.serve()
     asker.join(timeout=5.0)

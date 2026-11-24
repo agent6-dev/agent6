@@ -274,7 +274,7 @@ def test_the_machine_loop_journals_under_a_driving_actor(
         transcript_dir=tmp_path / "transcripts",
         request=AgentRequest(prompt="hi", timeout_s=30.0, mode="read_only"),
     )
-    provider, _summarizer, _events = agent._build_agent_providers(  # pyright: ignore[reportPrivateUsage]
+    provider, _summarizer, _events = agent._build_agent_providers(
         Config(),
         req,
         budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),

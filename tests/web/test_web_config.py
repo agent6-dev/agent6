@@ -47,7 +47,7 @@ def test_port_flag_is_held_to_the_same_bounds_as_the_config_leaf(
     `bind()` as an OverflowError crash report and `--port 0` bound an ephemeral
     port while printing the unreachable `:0` as the URL.
     """
-    from agent6.ui.cli import web_cmds  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import web_cmds
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.chdir(tmp_path)
@@ -65,7 +65,7 @@ def test_port_flag_is_held_to_the_same_bounds_as_the_config_leaf(
 def test_non_loopback_flag_refusal_uses_the_shared_diagnostic(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import web_cmds  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import web_cmds
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.chdir(tmp_path)

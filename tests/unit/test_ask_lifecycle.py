@@ -85,7 +85,7 @@ def test_a_run_can_be_seeded_from_an_ask(
     import json
 
     from agent6.config import Config
-    from agent6.ui.cli import run as cli_run  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import run as cli_run
 
     monkeypatch.chdir(tmp_path)
     ask = paths.state_dir(tmp_path) / "sessions" / "asks" / "quiet-fox-AAAAAA"
@@ -110,7 +110,7 @@ def test_seeding_from_an_unknown_session_fails_loudly(
 ) -> None:
     from agent6 import errors
     from agent6.config import Config
-    from agent6.ui.cli import run as cli_run  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import run as cli_run
 
     monkeypatch.chdir(tmp_path)
     with pytest.raises(errors.OperatorError, match="could not seed"):

@@ -22,7 +22,7 @@ from agent6.config import ChatGPTProviderEntry, Config, load_config, secret_stor
 from agent6.providers import oauth, oauth_protocol, provider_types, transport
 from agent6.sandbox import detect
 from agent6.sessions import event_log
-from agent6.ui.cli import check_cmds as cli_check_cmds  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import check_cmds as cli_check_cmds
 from agent6.ui.cli import main
 from agent6.vcs.git import policy as git_policy
 
@@ -168,7 +168,7 @@ def test_check_verify_uses_the_jail_path_not_the_ambient_path(
         }
     )
 
-    checks = check_cmds._doctor_check_verify(cfg)  # pyright: ignore[reportPrivateUsage]
+    checks = check_cmds._doctor_check_verify(cfg)
 
     assert [(check.name, check.status) for check in checks] == [("verify.head", "FAIL")]
 
@@ -344,7 +344,7 @@ def test_sandbox_reports_spawned_mcp_as_unconfined_without_a_jail(
         {"mcp": {"enabled": True, "servers": {"notes": {"command": ["notes-mcp"]}}}}
     )
 
-    check_sandbox._mcp_lines(cfg, tmp_path, "none")  # pyright: ignore[reportPrivateUsage]
+    check_sandbox._mcp_lines(cfg, tmp_path, "none")
 
     out = capsys.readouterr().out
     assert "notes: spawned UNCONFINED" in out
@@ -399,9 +399,7 @@ def test_sandbox_fails_when_a_run_would_refuse_the_config(
     monkeypatch.chdir(tmp_path)
     _stub_probes(monkeypatch, "partial")
 
-    rc = cli_check_cmds._cmd_check(  # pyright: ignore[reportPrivateUsage]
-        (config_path,), section="sandbox"
-    )
+    rc = cli_check_cmds._cmd_check((config_path,), section="sandbox")
 
     out = capsys.readouterr().out
     assert rc == 1

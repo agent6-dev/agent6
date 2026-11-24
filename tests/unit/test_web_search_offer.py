@@ -36,7 +36,7 @@ class _Recorder:
 
     def call(self, **kwargs: Any) -> ProviderResponse:
         self.calls.append(kwargs)
-        return golden._resp(text="The answer.")  # pyright: ignore[reportPrivateUsage]
+        return golden._resp(text="The answer.")
 
 
 def _drop(_event: object) -> None:
@@ -69,16 +69,16 @@ def test_a_worker_turn_carries_the_offer_to_the_provider(
     )
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=golden._config(),  # pyright: ignore[reportPrivateUsage]
+        config=golden._config(),
         provider=worker,
-        dispatcher=golden._Dispatcher([False]),  # type: ignore[arg-type]  # pyright: ignore[reportPrivateUsage]
+        dispatcher=golden._Dispatcher([False]),  # type: ignore[arg-type]
         logger=lambda _msg: None,
         mode="ask",
         web_search=offered,
     )
     conversation = loop_conversation.Conversation()
     conversation.notice("TASK:\nwhat changed?")
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="s",
         conversation=conversation,
         tool_calls=0,

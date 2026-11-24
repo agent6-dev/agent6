@@ -139,7 +139,7 @@ def test_a_prompt_runs_and_answers_with_its_stop_reason() -> None:
 
     sessions = _sessions(_run)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
-    sessions._by_id["s1"] = session  # pyright: ignore[reportPrivateUsage]
+    sessions._by_id["s1"] = session
     payload = _msg(2, "session/prompt", sessionId="s1", prompt=[{"type": "text", "text": "fix it"}])
     # The reply is written by the execution's thread, so reading before its join raced it.
     out = io.BytesIO()
@@ -169,7 +169,7 @@ def test_the_read_loop_stays_free_while_an_execution_runs() -> None:
 
     sessions = _sessions(_run)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
-    sessions._by_id["s1"] = session  # pyright: ignore[reportPrivateUsage]
+    sessions._by_id["s1"] = session
 
     out = io.BytesIO()
     reader, writer = _pipe()
@@ -398,7 +398,7 @@ def test_eof_lets_a_live_execution_reach_a_boundary() -> None:
 
     sessions = _sessions(_slow)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
-    sessions._by_id["s1"] = session  # pyright: ignore[reportPrivateUsage]
+    sessions._by_id["s1"] = session
 
     out = io.BytesIO()
     reader, writer = _pipe()
@@ -418,7 +418,7 @@ def test_eof_lets_a_live_execution_reach_a_boundary() -> None:
 def test_a_prompt_sent_as_a_notification_is_refused() -> None:
     """A prompt's reply carries its stopReason under the request's id, never a null id."""
     sessions = _sessions(_ends)
-    sessions._by_id["s1"] = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))  # pyright: ignore[reportPrivateUsage]
+    sessions._by_id["s1"] = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     payload = json.dumps(
         {
             "jsonrpc": "2.0",
@@ -452,7 +452,7 @@ def test_eof_grace_is_one_deadline_across_sessions() -> None:
     held = acp_session.Sessions(run=_hold, state_dir_for=lambda cwd: cwd / ".state")
     for i in range(3):
         s = acp_session.Session(acp_id=f"s{i}", cwd=pathlib.Path("/repo"))
-        held._by_id[s.acp_id] = s  # pyright: ignore[reportPrivateUsage]
+        held._by_id[s.acp_id] = s
         held.start_execution(s, "go", finish=lambda _r: None)
     start = time.monotonic()
     try:
@@ -461,7 +461,7 @@ def test_eof_grace_is_one_deadline_across_sessions() -> None:
         assert elapsed < 1.2, f"three sessions waited {elapsed:.2f}s; the bound is 0.5s total"
     finally:
         release.set()
-        for s in held._by_id.values():  # pyright: ignore[reportPrivateUsage]
+        for s in held._by_id.values():
             if s.thread is not None:
                 s.thread.join(timeout=5)
     del sessions

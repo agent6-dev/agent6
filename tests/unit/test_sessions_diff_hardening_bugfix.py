@@ -11,7 +11,7 @@ from __future__ import annotations
 import pathlib
 import subprocess
 
-from agent6.ui.cli import sessions_cmds  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import sessions_cmds
 
 
 def _git(root: pathlib.Path, *args: str) -> str:

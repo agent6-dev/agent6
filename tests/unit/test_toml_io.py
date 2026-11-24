@@ -354,7 +354,7 @@ def test_config_set_whole_extra_body_value_round_trips(tmp_path: pathlib.Path) -
         'extra_body = { provider = { sort = "throughput" } }\n',
         encoding="utf-8",
     )
-    value = io.parse_cli_value('{ provider = { sort = "latency" } }')  # pyright: ignore[reportPrivateUsage]
+    value = io.parse_cli_value('{ provider = { sort = "latency" } }')
     _upsert(cfg, "providers.openrouter.extra_body", value)
     parsed = tomllib.loads(cfg.read_text(encoding="utf-8"))
     assert parsed["providers"]["openrouter"]["extra_body"] == {"provider": {"sort": "latency"}}
@@ -369,7 +369,7 @@ def test_control_chars_serialize_to_valid_toml(tmp_path: pathlib.Path) -> None:
     """
     path = tmp_path / "c.toml"
     path.write_text("", encoding="utf-8")
-    _upsert(path, "git.name", "a\nb\tc\rd\x1be")  # pyright: ignore[reportPrivateUsage]
+    _upsert(path, "git.name", "a\nb\tc\rd\x1be")
     parsed = tomllib.loads(path.read_text(encoding="utf-8"))
     assert parsed["git"]["name"] == "a\nb\tc\rd\x1be"
     # control-char-free strings serialize byte-identically to before

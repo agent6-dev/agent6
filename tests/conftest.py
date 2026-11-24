@@ -117,7 +117,7 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _hermetic_git(  # pyright: ignore[reportUnusedFunction]
+def _hermetic_git(
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
     """Pin a suite-owned Git identity and blank the system and global git config.
@@ -177,14 +177,14 @@ def linked_worktrees(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _release_workspace_leases() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
+def _release_workspace_leases() -> Iterator[None]:
     """Drop the workspace leases a test's run, exec or machine held; a real process exits."""
     yield
     lock.release_workspaces()
 
 
 @pytest.fixture(autouse=True)
-def _isolate_state(  # pyright: ignore[reportUnusedFunction]
+def _isolate_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
     request: pytest.FixtureRequest,

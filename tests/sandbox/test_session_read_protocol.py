@@ -61,7 +61,7 @@ def test_invalid_read_response_abandons_the_peer(
         reason = r"frame.*exceeds" if padding else "invalid background read"
         with pytest.raises(jail.JailUnavailableError, match=reason):
             session.read_background("owned", offset=0, limit=1)
-        proc = session._proc  # pyright: ignore[reportPrivateUsage]
+        proc = session._proc
         assert proc.poll() is not None
         assert proc.stdin is not None and proc.stdin.closed
         assert proc.stdout is not None and proc.stdout.closed
@@ -121,7 +121,7 @@ def test_invalid_read_keeps_its_reason_after_status_and_stop_fail(
             assert (
                 "invalid background read" in session_shells.roster_from_dir(tmp_path / "state")[0]
             )
-        assert session._proc.poll() is not None  # pyright: ignore[reportPrivateUsage]
+        assert session._proc.poll() is not None
     finally:
         shells.stop_all()
         session.close()

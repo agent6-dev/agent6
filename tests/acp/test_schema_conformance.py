@@ -153,9 +153,7 @@ def test_the_handshake_answer_is_a_valid_initialize_response() -> None:
     from agent6.ui.acp import server as acp_server
 
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    result = server._initialize(  # pyright: ignore[reportPrivateUsage]
-        {"protocolVersion": 1, "clientCapabilities": {}}, None
-    )
+    result = server._initialize({"protocolVersion": 1, "clientCapabilities": {}}, None)
     assert not _errors(_validator("InitializeResponse"), result), json.dumps(result)
 
 
@@ -177,7 +175,7 @@ def test_a_permission_request_is_one_a_client_can_answer() -> None:
         sent.append(params)
         return {}
 
-    bridge.server.request = _capture  # pyright: ignore[reportAttributeAccessIssue]
+    bridge.server.request = _capture  # pyrefly: ignore[bad-assignment, method-assign]
     session = acp_session.Session(acp_id="s", cwd=pathlib.Path("/x"), session_id="run-x")
     announced = runner.Announced(execution_id="1")
     announced.add("7")

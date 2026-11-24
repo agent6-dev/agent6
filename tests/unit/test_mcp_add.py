@@ -158,10 +158,10 @@ def test_a_second_add_under_the_same_name_says_it_replaces(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path.parent / f"{tmp_path.name}-cfg"))
     args: dict[str, object] = {"url": "", "token_env": "", "pass_env": [], "to_repo": False}
 
-    assert cli_mcp_add.cmd_mcp_add("browser", command=_server_argv(), **args) == 0  # pyright: ignore[reportArgumentType]
+    assert cli_mcp_add.cmd_mcp_add("browser", command=_server_argv(), **args) == 0  # pyrefly: ignore[bad-argument-type]
     assert "replacing" not in capsys.readouterr().out
     argv = [*_server_argv(), "--again"]
-    assert cli_mcp_add.cmd_mcp_add("browser", command=argv, **args) == 0  # pyright: ignore[reportArgumentType]
+    assert cli_mcp_add.cmd_mcp_add("browser", command=argv, **args) == 0  # pyrefly: ignore[bad-argument-type]
 
     assert "written to the global config, replacing browser." in capsys.readouterr().out
     assert layer.load_effective(tmp_path).config.mcp.servers["browser"].command == tuple(argv)
@@ -179,18 +179,18 @@ def test_an_entry_in_the_other_layer_is_named_not_called_replaced(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path.parent / f"{tmp_path.name}-cfg"))
     args: dict[str, object] = {"url": "", "token_env": "", "pass_env": []}
 
-    assert cli_mcp_add.cmd_mcp_add("b", command=_server_argv(), to_repo=True, **args) == 0  # pyright: ignore[reportArgumentType]
+    assert cli_mcp_add.cmd_mcp_add("b", command=_server_argv(), to_repo=True, **args) == 0  # pyrefly: ignore[bad-argument-type]
     capsys.readouterr()
     argv = [*_server_argv(), "--global"]
-    assert cli_mcp_add.cmd_mcp_add("b", command=argv, to_repo=False, **args) == 0  # pyright: ignore[reportArgumentType]
+    assert cli_mcp_add.cmd_mcp_add("b", command=argv, to_repo=False, **args) == 0  # pyrefly: ignore[bad-argument-type]
     out = capsys.readouterr().out
     assert "written to the global config; the repo config's entry for b keeps winning." in out
     assert "replacing" not in out
     assert layer.load_effective(tmp_path).config.mcp.servers["b"].command == tuple(_server_argv())
 
-    assert cli_mcp_add.cmd_mcp_add("c", command=_server_argv(), to_repo=False, **args) == 0  # pyright: ignore[reportArgumentType]
+    assert cli_mcp_add.cmd_mcp_add("c", command=_server_argv(), to_repo=False, **args) == 0  # pyrefly: ignore[bad-argument-type]
     capsys.readouterr()
-    assert cli_mcp_add.cmd_mcp_add("c", command=argv, to_repo=True, **args) == 0  # pyright: ignore[reportArgumentType]
+    assert cli_mcp_add.cmd_mcp_add("c", command=argv, to_repo=True, **args) == 0  # pyrefly: ignore[bad-argument-type]
     out = capsys.readouterr().out
     assert "written to the repo config; it shadows the global config's entry for c." in out
     assert layer.load_effective(tmp_path).config.mcp.servers["c"].command == tuple(argv)
@@ -307,7 +307,7 @@ def test_a_mismatched_transport_and_env_flag_is_named(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path.parent / f"{tmp_path.name}-cfg"))
     args: dict[str, object] = {"token_env": "", "pass_env": [], "to_repo": False, **kwargs}
 
-    rc = cli_mcp_add.cmd_mcp_add("s", **args)  # pyright: ignore[reportArgumentType]
+    rc = cli_mcp_add.cmd_mcp_add("s", **args)  # pyrefly: ignore[bad-argument-type]
 
     assert rc == 2
     assert message in capsys.readouterr().err
@@ -401,7 +401,7 @@ def test_a_passed_secret_is_redacted_from_a_server_failure(
     the durable mcp.server_unavailable event, so the passed value is redacted before it leaves the
     transport.
     """
-    from agent6.tools import mcp_client  # pyright: ignore[reportPrivateUsage]
+    from agent6.tools import mcp_client
 
     srv_py = tmp_path / "srv.py"
     srv_py.write_text(

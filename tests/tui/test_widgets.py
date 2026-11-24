@@ -34,7 +34,7 @@ def test_choice_cursor_stays_visible_below_prior_content() -> None:
             await pilot.pause()
             field = app.query_one(forms.ChoiceField)
             scroll = app.query_one("#scroll", containers.VerticalScroll)
-            cursor_y = field.content_region.y + field._cursor  # pyright: ignore[reportPrivateUsage]
+            cursor_y = field.content_region.y + field._cursor
             assert (
                 scroll.scrollable_content_region.y
                 <= cursor_y
@@ -59,7 +59,7 @@ def test_choice_options_each_use_one_screen_row() -> None:
         async with app.run_test(size=(30, 10)) as pilot:
             await pilot.pause()
             field = app.query_one(forms.ChoiceField)
-            assert field.region.height == field._row_count  # pyright: ignore[reportPrivateUsage]
+            assert field.region.height == field._row_count
 
     asyncio.run(scenario())
 
@@ -144,9 +144,7 @@ def test_typeahead_highlight_stays_visible_when_suggestions_expand() -> None:
             await pilot.pause()
             field = app.query_one(forms.TypeaheadField)
             scroll = app.query_one("#scroll", containers.VerticalScroll)
-            highlight_y = (
-                field.content_region.y + field._index + 1  # pyright: ignore[reportPrivateUsage]
-            )
+            highlight_y = field.content_region.y + field._index + 1
             assert (
                 scroll.scrollable_content_region.y
                 <= highlight_y

@@ -24,7 +24,7 @@ pytestmark = pytest.mark.needs_namespaces
 
 def _attack(script: str, cwd: pathlib.Path, **policy_kw: object) -> str:
     argv = ("/usr/bin/python3", "-c", script)
-    policy = tools_policy.jail_policy(cwd, Config(), "full", argv, network="none", **policy_kw)  # pyright: ignore[reportArgumentType]
+    policy = tools_policy.jail_policy(cwd, Config(), "full", argv, network="none", **policy_kw)  # pyrefly: ignore[bad-argument-type]
     proc = jail.spawn_in_jail(
         policy, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     ).popen
@@ -215,7 +215,7 @@ def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: pathli
     import threading
 
     from agent6 import portable
-    from agent6.tools import mcp_client  # pyright: ignore[reportPrivateUsage]
+    from agent6.tools import mcp_client
 
     flood = (
         "import sys\n"

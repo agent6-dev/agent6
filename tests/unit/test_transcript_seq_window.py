@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.ui.cli import sessions_transcript  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import sessions_transcript
 
 
 def test_seq_window_shapes() -> None:

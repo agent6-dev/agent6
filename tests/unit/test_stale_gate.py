@@ -76,7 +76,7 @@ def test_the_proposal_is_printed_for_the_operator_to_set() -> None:
     agent6 cannot tell a gate that judges the work from one that always passes (`true`, a
     `;` list ending in prose), so applying it stays the operator's call.
     """
-    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
+    from agent6.app import finalize
 
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
@@ -101,7 +101,7 @@ def test_the_proposal_is_printed_for_the_operator_to_set() -> None:
 
 def test_a_long_proposal_is_clipped() -> None:
     """A paragraph is printed clipped to one line, never as an argv."""
-    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
+    from agent6.app import finalize
 
     prose = (
         "The configured gate runs the whole suite including the slow integration tests, which "
@@ -134,7 +134,7 @@ def test_a_short_prose_proposal_is_printed_whole_with_no_clip_mark() -> None:
 
     On a two-line note under the clip length, a `...` would read as if text had been cut.
     """
-    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
+    from agent6.app import finalize
 
     note = "Narrow the gate to the parser tests.\nThe database suite runs in CI."
     out = io.StringIO()
@@ -156,7 +156,7 @@ def test_a_short_prose_proposal_is_printed_whole_with_no_clip_mark() -> None:
 
 
 def _stale_report(proposal: str) -> str:
-    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
+    from agent6.app import finalize
 
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
@@ -183,7 +183,7 @@ def test_a_bare_sh_c_proposal_prints_as_it_is() -> None:
 
 def test_a_proposal_over_a_green_gate_is_not_printed() -> None:
     """It would ask the operator to replace a gate that just passed."""
-    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
+    from agent6.app import finalize
 
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
@@ -203,7 +203,7 @@ def test_a_proposal_over_a_green_gate_is_not_printed() -> None:
 
 
 def test_nothing_is_printed_without_a_declaration() -> None:
-    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
+    from agent6.app import finalize
 
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
@@ -274,8 +274,8 @@ def _finish_call(
         number=3, resp=mock.MagicMock(), assistant=loop_conversation.AssistantMessage((), ())
     )
     tool_effects.capture_finish(wf, state, turn, "finish_session", tool_input)
-    ctx = wf._turn_context(state, turn=turn.number, execution_start=1)  # pyright: ignore[reportPrivateUsage]
-    wf._turn_finish_gates(state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=turn.number, execution_start=1)
+    wf._turn_finish_gates(state, turn, ctx)
     return turn
 
 
@@ -311,14 +311,14 @@ def test_a_proposal_on_a_returned_finish_reaches_the_end_report(
 
     The tool result had told the model the proposal was recorded for the operator.
     """
-    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
+    from agent6.app import finalize
 
     wf, state = _red_gated_run(tmp_path)
     returned = _finish_call(wf, state, {"summary": "done", "stale_gate": "pytest tests/unit"})
     assert returned.finish is None and returned.end_returned
     state.gates.verify_retries_used = 2
     stands = _finish_call(wf, state, {"summary": "done"})
-    result = wf._turn_stop_checks(state, stands, loop_conversation.Conversation())  # pyright: ignore[reportPrivateUsage]
+    result = wf._turn_stop_checks(state, stands, loop_conversation.Conversation())
     assert result is not None and result.stale_gate == "pytest tests/unit"
     # The end is named by its own call, which made no claim.
     assert (result.reason, result.verification) == ("finish_session", "failed")

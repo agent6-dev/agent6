@@ -10,7 +10,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "bench" / "sweep"))
 
-import stats  # path-injected bench module  # pyright: ignore[reportMissingImports]
+import stats  # path-injected bench module  # pyrefly: ignore[missing-import]
 
 
 def test_wilson_ci_known_values() -> None:

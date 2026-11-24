@@ -21,14 +21,12 @@ def _payload(repo: pathlib.Path, producer: str, base: str, head: str) -> dict[st
     if producer == "git":
         return git_model.diff_payload(repo, base, head, "code.py")
     if producer == "review":
-        status, payload = review_routes._diff(  # pyright: ignore[reportPrivateUsage]
+        status, payload = review_routes._diff(
             repo, base, head, git_history.changed_files(repo, base, head), "code.py", False
         )
         assert status == 200
         return payload
-    payload, reason = model._diff_payload(  # pyright: ignore[reportPrivateUsage]
-        repo, head, base=base, cumulative=False, miss="missing"
-    )
+    payload, reason = model._diff_payload(repo, head, base=base, cumulative=False, miss="missing")
     assert payload is not None, reason
     return payload
 
@@ -117,7 +115,7 @@ def test_run_diff_spans_cover_renames_multiple_files_and_cumulative_base(
     test_git_history._git(tmp_path, "mv", "code.py", "renamed.txt")
     (tmp_path / "second.py").write_text("class Second:\n    pass\n")
     head = test_git_history._commit(tmp_path, "rename and add")
-    payload, reason = model._diff_payload(  # pyright: ignore[reportPrivateUsage]
+    payload, reason = model._diff_payload(
         tmp_path, head, base=base, cumulative=True, miss="missing"
     )
     assert payload is not None, reason
@@ -208,8 +206,6 @@ def test_a_run_diff_takes_a_sha256_commit_id(tmp_path: pathlib.Path) -> None:
     (tmp_path / "notes.txt").write_text("one\ntwo\n", encoding="utf-8")
     head = test_git_history._commit(tmp_path, "head")
     assert len(head) == 64
-    payload, reason = model._diff_payload(  # pyright: ignore[reportPrivateUsage]
-        tmp_path, head, base="", cumulative=False, miss="missing"
-    )
+    payload, reason = model._diff_payload(tmp_path, head, base="", cumulative=False, miss="missing")
     assert payload is not None, reason
     assert "+two" in payload["patch"]

@@ -135,11 +135,9 @@ def test_the_plan_is_sent_live_and_again_on_replay(tmp_path: pathlib.Path) -> No
 
     live: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    server.notify_raw = live.append  # pyright: ignore[reportAttributeAccessIssue]
+    server.notify_raw = live.append  # pyrefly: ignore[bad-assignment, method-assign]
     session = session_mod.Session(acp_id="run-x", cwd=tmp_path, session_id="run-x")
-    runner.RunBridge(server=server)._stream(  # pyright: ignore[reportPrivateUsage]
-        session, log, lambda: True, 0, runner.Announced()
-    )
+    runner.RunBridge(server=server)._stream(session, log, lambda: True, 0, runner.Announced())
     replayed: list[dict[str, Any]] = []
     updates.replay(
         tail.tail_events(log, follow=False),

@@ -134,7 +134,7 @@ def test_page_served(server: tuple[web_server.WebServer, int]) -> None:
 
 @pytest.mark.parametrize("host", ["::1", "[::1]"])
 def test_ipv6_loopback_bind_uses_ipv6_socket(tmp_path: pathlib.Path, host: str) -> None:
-    srv = web_server._create_web_server(host, 0, tmp_path, "", secret=signin.SECRET)  # pyright: ignore[reportPrivateUsage]
+    srv = web_server._create_web_server(host, 0, tmp_path, "", secret=signin.SECRET)
     try:
         assert srv.address_family == socket.AF_INET6
     finally:
@@ -147,7 +147,7 @@ def test_explicit_config_reaches_the_server(tmp_path: pathlib.Path) -> None:
     A dropped path ran the whole browser surface on the default layers.
     """
     cfg = tmp_path / "f.toml"
-    srv = web_server._create_web_server("127.0.0.1", 0, tmp_path, "", (cfg,), secret=signin.SECRET)  # pyright: ignore[reportPrivateUsage]
+    srv = web_server._create_web_server("127.0.0.1", 0, tmp_path, "", (cfg,), secret=signin.SECRET)
     try:
         assert srv.config_paths == (cfg,)
     finally:
@@ -1755,8 +1755,8 @@ def test_a_stalled_request_is_dropped(
     for as long as the client kept it open.
     """
     _srv, port = server
-    assert web_server._Handler.timeout, "the handler sets no socket timeout"  # pyright: ignore[reportPrivateUsage]
-    monkeypatch.setattr(web_server._Handler, "timeout", 0.3)  # pyright: ignore[reportPrivateUsage]
+    assert web_server._Handler.timeout, "the handler sets no socket timeout"
+    monkeypatch.setattr(web_server._Handler, "timeout", 0.3)
     with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
         sock.sendall(sent)
         assert sock.recv(4096) == b""
@@ -1773,7 +1773,7 @@ def test_a_quiet_event_stream_outlives_the_socket_timeout(
     is in neither.
     """
     _srv, port = server
-    monkeypatch.setattr(web_server._Handler, "timeout", 0.3)  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(web_server._Handler, "timeout", 0.3)
     _make_run(
         tmp_path,
         "quiet-run",

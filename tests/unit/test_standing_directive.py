@@ -24,8 +24,8 @@ from agent6.sessions import layout as sessions_layout
 from agent6.ui import directive_actions
 from agent6.ui.cli import main
 from tests.unit.test_task_queue_drain import (
-    _take_requests,  # pyright: ignore[reportPrivateUsage]
-    _workflow,  # pyright: ignore[reportPrivateUsage]
+    _take_requests,
+    _workflow,
 )
 
 

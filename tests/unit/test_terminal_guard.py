@@ -41,8 +41,8 @@ def test_the_spinner_erases_its_line_under_the_wrapper() -> None:
     """The erase idiom is written under the wrapper, so a file name carrying it forges nothing."""
     raw = io.StringIO()
     view = console_render.ConsoleView(terminal_guard.ScrubbedStream(raw), color=False)  # type: ignore[arg-type]
-    view._status_active = True  # pyright: ignore[reportPrivateUsage]
-    view._clear_status()  # pyright: ignore[reportPrivateUsage]
+    view._status_active = True
+    view._clear_status()
     assert raw.getvalue() == "\r\x1b[2K"
 
 

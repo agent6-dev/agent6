@@ -112,7 +112,7 @@ def test_a_refresh_keeps_the_focus_a_selection_and_a_press_in_the_list(
 @pytest.fixture
 def fan_port(group: pathlib.Path) -> Iterator[int]:
     """A server over a fan-out group, `fan`, with two children."""
-    yield from test_web_browser._serve(group)  # pyright: ignore[reportPrivateUsage]
+    yield from test_web_browser._serve(group)
 
 
 def test_a_drag_that_selects_text_in_a_row_keeps_the_page(
@@ -134,7 +134,7 @@ def test_a_drag_that_selects_text_in_a_row_keeps_the_page(
         return page.evaluate("String(getSelection())")
 
     _run(tmp_path, "alpha-AAAAAA", "Alpha task", STOP)
-    test_web_actions._ended_machine(tmp_path, "tiny")  # pyright: ignore[reportPrivateUsage]
+    test_web_actions._ended_machine(tmp_path, "tiny")
     page, errors = open_page(port)
     page.goto(f"http://127.0.0.1:{port}/#/machines")
     assert drag(page.locator(".item a.title")) == "tiny"
@@ -1302,7 +1302,7 @@ def test_an_instance_row_goes_by_the_instances_name(
 
     long = "weekly-dependency-upgrade-and-security-advisory-sweep"
     for name in ("tiny", "tiny-two", long):
-        test_web_actions._ended_machine(tmp_path, name)  # pyright: ignore[reportPrivateUsage]
+        test_web_actions._ended_machine(tmp_path, name)
     page, errors = open_page(port)
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"http://127.0.0.1:{port}/#/machines")
@@ -1320,7 +1320,7 @@ def test_an_unreadable_instance_names_no_state(
     """An unreadable instance's row read "at ?" for the state its journal could not tell."""
     from playwright.sync_api import expect
 
-    test_web_actions._ended_machine(tmp_path, "broken")  # pyright: ignore[reportPrivateUsage]
+    test_web_actions._ended_machine(tmp_path, "broken")
     journal = paths.state_dir(tmp_path) / "machines" / "broken" / "journal.jsonl"
     journal.write_text(journal.read_text(encoding="utf-8") + '{"type": "step"}\n')
     page, errors = open_page(port)

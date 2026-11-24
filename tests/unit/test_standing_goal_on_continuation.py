@@ -18,7 +18,7 @@ from agent6.harness import loop
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import parser as cli_parser
 from tests.unit.test_task_queue_drain import (
-    _workflow,  # pyright: ignore[reportPrivateUsage]
+    _workflow,
 )
 
 

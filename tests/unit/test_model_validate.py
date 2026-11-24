@@ -161,7 +161,7 @@ def test_known_models_is_the_roles_models_plus_the_providers_cache(
     cache_home: pathlib.Path,
 ) -> None:
     _write_cache(cache_home, "o", ["gpt-x"])
-    known = validate._known_models(_cfg("kimi-k2"), "o")  # pyright: ignore[reportPrivateUsage]
+    known = validate._known_models(_cfg("kimi-k2"), "o")
     assert known == {"kimi-k2", "gpt-x"}
 
 
@@ -266,7 +266,7 @@ def test_configured_model_no_cache_never_refuses(cache_home: pathlib.Path) -> No
 def test_known_models_excludes_sibling_provider_catalog(cache_home: pathlib.Path) -> None:
     _write_cache(cache_home, "w", ["w/model-a"])
     _write_cache(cache_home, "s", ["s/only-model"])
-    known = validate._known_models(_two_provider_cfg(), "w")  # pyright: ignore[reportPrivateUsage]
+    known = validate._known_models(_two_provider_cfg(), "w")
     assert known == {"w/base-model", "w/model-a"}
 
 

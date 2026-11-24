@@ -13,7 +13,7 @@ import pytest
 
 from agent6 import paths
 from agent6.ui import cli
-from agent6.ui.cli import prompt_cmds  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import prompt_cmds
 from tests import launch_env
 
 

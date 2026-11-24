@@ -15,7 +15,7 @@ from agent6.ui.cli import entry, memory_cmds
 
 
 @pytest.fixture(autouse=True)
-def _no_controlling_terminal(  # pyright: ignore[reportUnusedFunction]
+def _no_controlling_terminal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Run as CI does, with no controlling terminal: `remove` without `--yes` asks on one."""

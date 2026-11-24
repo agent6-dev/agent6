@@ -71,7 +71,7 @@ def test_a_server_that_starts_emits_nothing(
     def _ok(_self: object) -> None:
         return None
 
-    monkeypatch.setattr(mcp_client._MCPServer, "start", _ok)  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(mcp_client._MCPServer, "start", _ok)
     logs = tmp_path / "logs.jsonl"
     mgr = session_setup.start_mcp_manager_if_enabled(
         _cfg(["true"]), tmp_path, "none", events=event_log.EventSink(logs)
@@ -135,7 +135,7 @@ def test_check_names_the_spawn_error_not_a_symptom(capsys: pytest.CaptureFixture
     """
     from agent6.ui.cli import check_cmds
 
-    _doctor_check_mcp = check_cmds._doctor_check_mcp  # pyright: ignore[reportPrivateUsage]
+    _doctor_check_mcp = check_cmds._doctor_check_mcp
 
     checks = _doctor_check_mcp(_cfg(["/nonexistent/mcp-server"]))
     assert [c.status for c in checks] == ["FAIL"]

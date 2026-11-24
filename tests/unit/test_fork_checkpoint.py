@@ -43,9 +43,9 @@ from agent6.sessions import attachments, event_log, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
 from agent6.ui.cli import (
-    fork,  # pyright: ignore[reportPrivateUsage]
+    fork,
     main,
-    resume,  # pyright: ignore[reportPrivateUsage]
+    resume,
 )
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -1178,9 +1178,7 @@ def test_fork_steer_passes_through_to_the_continuation(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(app_fork, "create_fork", _fake_fork)
     monkeypatch.setattr(app_resume, "resume_task", _capture_resume)
-    rc = fork_cli._cmd_fork(  # pyright: ignore[reportPrivateUsage]
-        (), "src-run", steer="try the lock-free design instead"
-    )
+    rc = fork_cli._cmd_fork((), "src-run", steer="try the lock-free design instead")
     assert rc == 0
     assert captured["steer"] == "try the lock-free design instead"
 
@@ -1212,10 +1210,10 @@ def test_forking_a_finished_run_with_no_new_work_is_refused(
 
     monkeypatch.setattr(app_fork, "create_fork", _must_not_fork)
 
-    assert fork_cli._cmd_fork((), "done-run") == 2  # pyright: ignore[reportPrivateUsage]
+    assert fork_cli._cmd_fork((), "done-run") == 2
     # The source's saved answer is its own resume's new work, not a fork's: the child has none.
     assert ipc.write_question_answers(layout.session_dir, "question-1", ["yes"])
-    assert fork_cli._cmd_fork((), "done-run") == 2  # pyright: ignore[reportPrivateUsage]
+    assert fork_cli._cmd_fork((), "done-run") == 2
 
     err = capsys.readouterr().err
     assert "--steer" in err and "--at-turn" in err
@@ -1231,9 +1229,7 @@ def test_fork_steer_with_no_run_is_refused(
         pytest.fail("create_fork must not run when the flag combo is refused")
 
     monkeypatch.setattr(app_fork, "create_fork", _must_not_fork)
-    rc = fork_cli._cmd_fork(  # pyright: ignore[reportPrivateUsage]
-        (), "src-run", no_run=True, steer="x"
-    )
+    rc = fork_cli._cmd_fork((), "src-run", no_run=True, steer="x")
     assert rc == 2
     assert "--steer" in capsys.readouterr().err
 

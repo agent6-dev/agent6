@@ -95,7 +95,7 @@ def test_offset_reads_are_bounded_and_keep_raw_bytes(
     with pytest.raises(jail.JailUnavailableError, match="unknown job"):
         session.read_background("not-owned", offset=0, limit=1)
     for offset, limit in [(0, 0), (0, 65537), (256 * 600 + 1, 1)]:
-        answer = session._request(  # pyright: ignore[reportPrivateUsage]
+        answer = session._request(
             {"kind": "read", "handle": handle, "offset": offset, "limit": limit}
         )
         assert "error" in answer and "data" not in answer
@@ -154,7 +154,7 @@ def test_host_log_replacement_never_redirects_session_copies(
     assert isinstance(handoff, kinds.BackgroundHandoff)
     view = shells.adopt(handoff, session=session)
     log = shells.log_root / view.id / "out.log"
-    fd = shells._get(view.id).log_fd  # pyright: ignore[reportPrivateUsage]
+    fd = shells._get(view.id).log_fd
     secret = tmp_path / "secret"
     secret.write_text("DECOY")
     log.unlink()
@@ -186,17 +186,17 @@ def test_teardown_copies_output_before_private_session_cleanup(
         ("/bin/sh", "-c", _LATE_OUTPUT),
         lambda a, rw: kinds.JailPolicy(cwd=work, argv=a, isolation=isolation),
     )
-    shell = shells._get(view.id)  # pyright: ignore[reportPrivateUsage]
-    assert shell.job._owns_session  # pyright: ignore[reportPrivateUsage]
-    owner = shell.job._session  # pyright: ignore[reportPrivateUsage]
+    shell = shells._get(view.id)
+    assert shell.job._owns_session
+    owner = shell.job._session
     fd = shell.log_fd
     try:
-        assert owner._proc.poll() is None  # pyright: ignore[reportPrivateUsage]
+        assert owner._proc.poll() is None
         (work / "release").touch()
         wait_file(work / "emitted")
         # No read or settle after releasing the command: teardown must copy the late bytes.
         shells.stop_all()
-        assert owner._proc.poll() == 0  # pyright: ignore[reportPrivateUsage]
+        assert owner._proc.poll() == 0
         with pytest.raises(OSError):
             os.fstat(fd)
         assert (shells.log_root / view.id / "out.log").read_bytes() == b"before\nafter\n"
@@ -214,7 +214,7 @@ def test_host_record_failure_does_not_skip_job_cleanup(
         lambda a, rw: kinds.JailPolicy(cwd=tmp_path, argv=a),
         session=session,
     )
-    shell = shells._get(view.id)  # pyright: ignore[reportPrivateUsage]
+    shell = shells._get(view.id)
     deadline = time.monotonic() + 5
     while shell.job.status().running:
         assert time.monotonic() < deadline
@@ -254,8 +254,8 @@ def test_loss_between_status_and_read_is_not_reported_running(
     def lose(
         self: jail_session.JailSession, handle: str, *, offset: int, limit: int
     ) -> jail_session.BackgroundRead:
-        self._proc.kill()  # pyright: ignore[reportPrivateUsage]
-        self._proc.wait(timeout=5)  # pyright: ignore[reportPrivateUsage]
+        self._proc.kill()
+        self._proc.wait(timeout=5)
         return real_read(self, handle, offset=offset, limit=limit)
 
     monkeypatch.setattr(jail_session.JailSession, "read_background", lose)
@@ -274,8 +274,8 @@ def test_lost_outcome_and_copied_output_survive_replay(
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.adopt(handback(session), session=session)
     assert "before" in shells.read(view.id, tail_lines=10)[1]
-    session._proc.kill()  # pyright: ignore[reportPrivateUsage]
-    session._proc.wait(timeout=5)  # pyright: ignore[reportPrivateUsage]
+    session._proc.kill()
+    session._proc.wait(timeout=5)
     shells.settle()
     shells.stop_all()
     replay = session_shells.roster_from_dir(tmp_path / "shells")

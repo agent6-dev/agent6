@@ -383,7 +383,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         if not text or not text.strip():
             self.notify("nothing selected")
             return
-        driver = self.app._driver  # pyright: ignore[reportPrivateUsage]
+        driver = self.app._driver  # pyrefly: ignore[protected-access]
 
         def emit(seq: str) -> None:
             if driver is not None:

@@ -43,7 +43,7 @@ def _build(mode: str, index: str, tmp_path: pathlib.Path) -> str:
             }
         ),
         repo=_repo(tmp_path),
-        mode=mode,  # pyright: ignore[reportArgumentType]
+        mode=mode,  # pyrefly: ignore[bad-argument-type]
         memory_index=index,
         memory_dir_path="/state/memory",
         skills=None,
@@ -183,9 +183,7 @@ def test_mixed_patch_records_memory_and_workspace_effects(
     result = dispatcher.dispatch("apply_patch", tool_input)
     assert target.read_text() == "A fact.\n"
     events = mock.MagicMock()
-    wf = test_harness._wf(  # pyright: ignore[reportPrivateUsage]
-        repo, mode="run", state_dir=state_dir, events=events
-    )
+    wf = test_harness._wf(repo, mode="run", state_dir=state_dir, events=events)
     wf.chain = run_chain.RunChain(
         repo,
         ref="refs/agent6/t/head",

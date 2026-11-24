@@ -465,7 +465,7 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
         mode="run",
         events=ev,
     )
-    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    wf._drive_loop(
         system="s",
         conversation=loop_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
@@ -614,7 +614,7 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
         mode="run",
         events=ev,
     )
-    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    wf._drive_loop(
         system="s",
         conversation=loop_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
@@ -749,7 +749,7 @@ def test_snapshot_written_after_tool_dispatch_advances_turn(tmp_path: pathlib.Pa
     provider.call = _spy_call
     compact_spy = mock.patch.object(compaction_driver.Tiered, "compact", _spy_compact)
     compact_spy.start()
-    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    wf._drive_loop(
         system="s",
         conversation=loop_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
@@ -1000,7 +1000,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
             },
         ]
     )
-    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    wf._drive_loop(
         system="s",
         conversation=restored,
         tool_calls=0,
@@ -1077,7 +1077,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
     conversation = loop_conversation.Conversation.from_wire(
         [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
     )
-    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    wf._drive_loop(
         system="s",
         conversation=conversation,
         tool_calls=0,
@@ -1148,7 +1148,7 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     conversation = loop_conversation.Conversation.from_wire(
         [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
     )
-    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    wf._drive_loop(
         system="s",
         conversation=conversation,
         tool_calls=0,

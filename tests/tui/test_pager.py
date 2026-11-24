@@ -27,7 +27,7 @@ def test_pager_uses_shell_words_and_only_adds_missing_less_color_flag(
     """PAGER arguments stay separate, and less receives one raw-color option."""
     monkeypatch.setenv("PAGER", pager)
     screen = conversation.ConversationScreen(tmp_path / "logs.jsonl", title=lambda _ctx: "test")
-    screen._content.append("transcript")  # pyright: ignore[reportPrivateUsage]
+    screen._content.append("transcript")
     app = mock.Mock()
     app.suspend.return_value = contextlib.nullcontext()
 

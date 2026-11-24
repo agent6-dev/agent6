@@ -8,7 +8,7 @@ import pathlib
 import subprocess
 
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import ask  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import ask
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:

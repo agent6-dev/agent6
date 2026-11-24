@@ -202,7 +202,7 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: pathlib.P
 
     wf = loop.Harness.__new__(loop.Harness)
     wf.chain = run_chain.RunChain(tmp_path)
-    wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+    wf.config = types.SimpleNamespace(  # pyrefly: ignore[bad-assignment]
         sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
             standing_patience=-1,
@@ -261,7 +261,7 @@ def test_a_gate_is_never_adopted_when_the_worker_cannot_run_one(tmp_path: pathli
     cfg = Config.model_validate({"sandbox": {"run_commands": "deny"}})
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
     assert d.adopt_verify_command(("/bin/true",)) is False
-    assert d._config.harness.verify.command == ()  # pyright: ignore[reportPrivateUsage]
+    assert d._config.harness.verify.command == ()
 
 
 def test_the_worker_gets_the_tool_for_a_gate_adopted_mid_run(tmp_path: pathlib.Path) -> None:
@@ -633,7 +633,7 @@ def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: pathlib.Pa
             repo=repo,
             mode="run",
             skills=None,
-            isolation=isolation,  # pyright: ignore[reportArgumentType]
+            isolation=isolation,
         )
         assert (marker in out) is expect, (isolation, expect)
         assert "__GIT_PROTECT_RULE__" not in out

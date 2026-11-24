@@ -73,7 +73,7 @@ def test_machine_run_reads_the_explicit_config_layer(
     real = layer.load_effective_with_overlay
 
     def spy(repo_root: pathlib.Path, overlay: dict[str, object], **kw: object):
-        eff = real(repo_root, overlay, **kw)  # pyright: ignore[reportArgumentType]
+        eff = real(repo_root, overlay, **kw)  # pyrefly: ignore[bad-argument-type]
         seen.append(eff.config.machine.keep_snapshots)
         return eff
 

@@ -187,9 +187,9 @@ def test_lazy_initial_scan_is_deferred_until_first_query(tmp_path: pathlib.Path)
     (tmp_path / "a.py").write_text("def x(): pass\n")
     idx = index.SymbolIndex(path_safety.Workspace(root=tmp_path))
     # Before any query, internal caches are empty.
-    assert not idx._symbols  # pyright: ignore[reportPrivateUsage]
+    assert not idx._symbols
     idx.outline(tmp_path / "a.py")
-    assert idx._symbols  # pyright: ignore[reportPrivateUsage]
+    assert idx._symbols
 
 
 # ---------------------------------------------------------------------------

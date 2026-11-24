@@ -63,7 +63,7 @@ def test_every_session_id_is_offered_where_any_is_accepted(
     """`sessions show|diff|transcript|...` resolve across every bucket."""
     monkeypatch.chdir(tmp_path)
     _seed(tmp_path)
-    offered = set(completers._complete_session_ids(""))  # pyright: ignore[reportPrivateUsage]
+    offered = set(completers._complete_session_ids(""))
     assert offered == {
         "runny-one-AAAAAA",
         "planny-two-BBBBB",
@@ -78,7 +78,7 @@ def test_resume_offers_only_what_it_can_resume(
     """Resume does not offer a machine draft, which it refuses."""
     monkeypatch.chdir(tmp_path)
     _seed(tmp_path)
-    offered = set(completers._complete_resumable_ids(""))  # pyright: ignore[reportPrivateUsage]
+    offered = set(completers._complete_resumable_ids(""))
     assert offered == {"runny-one-AAAAAA", "planny-two-BBBBB", "asky-three-CCCCC"}
 
 
@@ -87,7 +87,7 @@ def test_attach_offers_every_session_and_every_machine(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed(tmp_path)
-    offered = set(completers._complete_watch_targets(""))  # pyright: ignore[reportPrivateUsage]
+    offered = set(completers._complete_watch_targets(""))
     assert "live-machine" in offered
     assert {"runny-one-AAAAAA", "planny-two-BBBBB", "asky-three-CCCCC"} <= offered
 
@@ -109,9 +109,7 @@ def test_enum_value_completion_is_derived_from_the_schema(
     }
     assert len(schema_enums) > 10, "expected many enum leaves in the schema"
     for key in sorted(schema_enums):
-        offered = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
-            "", argparse.Namespace(key=key)
-        )
+        offered = completers._complete_config_values("", argparse.Namespace(key=key))
         assert offered, f"{key} offers no values on TAB"
 
     # A bool is as closed a set as any enum; `config set` takes exactly `true` or `false`.
@@ -122,15 +120,11 @@ def test_enum_value_completion_is_derived_from_the_schema(
     }
     assert len(bools) > 10, "expected many bool leaves in the schema"
     for key in sorted(bools):
-        offered = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
-            "", argparse.Namespace(key=key)
-        )
+        offered = completers._complete_config_values("", argparse.Namespace(key=key))
         assert set(offered) == {"true", "false"}, f"{key} offers {offered}"
 
     # Every schema value, `none` included: the CLI offers what the TUI and web choosers offer.
-    iso = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
-        "", argparse.Namespace(key="sandbox.isolation")
-    )
+    iso = completers._complete_config_values("", argparse.Namespace(key="sandbox.isolation"))
     schema = next(
         s.choices or ()
         for s in config_view.build_config_view(layer.load_effective(tmp_path)).settings
@@ -154,26 +148,18 @@ def test_live_only_verbs_offer_only_live_sessions(
     _seed(tmp_path)
     live = layout.bucket_dir(paths.state_dir(tmp_path), "runs") / "runny-one-AAAAAA"
     process.write_worker_pid(live, os.getpid())
-    offered = completers._complete_live_session_ids("")  # pyright: ignore[reportPrivateUsage]
+    offered = completers._complete_live_session_ids("")
     assert offered == ["runny-one-AAAAAA"]
 
     parser = cli_parser.build_parser()
-    subs = next(
-        a
-        for a in parser._actions  # pyright: ignore[reportPrivateUsage]
-        if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
-    )
+    subs = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
     for verb in ("steer", "forward"):
-        target = next(
-            a
-            for a in subs.choices[verb]._actions  # pyright: ignore[reportPrivateUsage]
-            if a.dest == "target"
-        )
+        target = next(a for a in subs.choices[verb]._actions if a.dest == "target")
         completer = getattr(target, "completer", None)
         assert callable(completer)
         assert completer("") == offered, verb
     # `exec` takes a session first, and none after `--new`.
-    exec_rest = completers._complete_exec_rest  # pyright: ignore[reportPrivateUsage]
+    exec_rest = completers._complete_exec_rest
     assert exec_rest("", parsed_args=argparse.Namespace(new=False)) == ["runny-one-AAAAAA"]
     assert exec_rest("", parsed_args=argparse.Namespace(new=True)) == []
 
@@ -199,7 +185,7 @@ def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(
         encoding="utf-8",
     )
     process.write_worker_pid(ended, os.getpid())
-    assert completers._complete_live_session_ids("") == []  # pyright: ignore[reportPrivateUsage]
+    assert completers._complete_live_session_ids("") == []
 
 
 def test_config_list_edit_completion_offers_only_list_leaves(
@@ -210,7 +196,7 @@ def test_config_list_edit_completion_offers_only_list_leaves(
 
     monkeypatch.chdir(tmp_path)
     for verb in ("add", "remove"):
-        offered = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
+        offered = completers._complete_config_keys(
             prefix="sandbox.",
             parsed_args=argparse.Namespace(config_command=verb, config=None, machine_file=None),
             action=object(),
@@ -226,7 +212,7 @@ def test_config_list_edit_value_completion_omits_scalar_choices(
     import argparse
 
     monkeypatch.chdir(tmp_path)
-    offered = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
+    offered = completers._complete_config_values(
         prefix="",
         parsed_args=argparse.Namespace(
             config_command="add", key="sandbox.network", config=None, machine_file=None
@@ -245,7 +231,7 @@ def test_config_show_completion_offers_accepted_section_prefixes(
     import argparse
 
     monkeypatch.chdir(tmp_path)
-    offered = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
+    offered = completers._complete_config_keys(
         prefix=section[:4],
         parsed_args=argparse.Namespace(config_command="show", config=None),
         action=object(),
@@ -268,14 +254,14 @@ def test_machine_overlay_key_completion_omits_operator_only_leaves(
 
     monkeypatch.chdir(tmp_path)
     machine = tmp_path / "m.asm.toml"
-    offered = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
+    offered = completers._complete_config_keys(
         prefix="mcp.",
         parsed_args=argparse.Namespace(config=None, machine_file=machine, config_command="set"),
         action=object(),
     )
     assert offered == []
 
-    readable = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
+    readable = completers._complete_config_keys(
         prefix="mcp.",
         parsed_args=argparse.Namespace(config=None, machine_file=machine, config_command="get"),
         action=object(),
@@ -291,7 +277,7 @@ def test_machine_overlay_value_completion_omits_operator_only_leaves(
     import argparse
 
     monkeypatch.chdir(tmp_path)
-    offered = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
+    offered = completers._complete_config_values(
         prefix="",
         parsed_args=argparse.Namespace(
             key="machine.pass_env", config=None, machine_file=tmp_path / "m.asm.toml"
@@ -317,7 +303,7 @@ def test_config_key_completion_reads_user_presets_from_the_typed_config(
     later = tmp_path / "later.toml"
     later.write_text("[presets.later.review]\ninterval_turns = 9\n", encoding="utf-8")
 
-    offered = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
+    offered = completers._complete_config_keys(
         prefix="presets.",
         parsed_args=argparse.Namespace(config=[explicit, later]),
         action=object(),
@@ -334,7 +320,7 @@ def test_config_value_completion_under_a_preset_uses_the_leafs_choices(
     import argparse
 
     monkeypatch.chdir(tmp_path)
-    offered = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
+    offered = completers._complete_config_values(
         prefix="s",
         parsed_args=argparse.Namespace(key="presets.team.sandbox.network", config=None),
         action=object(),
@@ -359,10 +345,10 @@ def test_mcp_remove_offers_only_servers_in_the_selected_layer(
     repo_path.parent.mkdir(parents=True)
     repo_path.write_text('[mcp.servers.repo_only]\ncommand = ["true"]\n', encoding="utf-8")
 
-    global_names = completers._complete_mcp_servers(  # pyright: ignore[reportPrivateUsage]
+    global_names = completers._complete_mcp_servers(
         prefix="", parsed_args=argparse.Namespace(to_repo=False, config=None), action=object()
     )
-    repo_names = completers._complete_mcp_servers(  # pyright: ignore[reportPrivateUsage]
+    repo_names = completers._complete_mcp_servers(
         prefix="", parsed_args=argparse.Namespace(to_repo=True, config=None), action=object()
     )
 
@@ -379,7 +365,7 @@ def test_model_provider_completion_reads_the_typed_config(
     """
     import argparse
 
-    from agent6.ui.cli import model  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import model
 
     monkeypatch.chdir(tmp_path)
     custom = tmp_path / "custom.toml"
@@ -388,15 +374,15 @@ def test_model_provider_completion_reads_the_typed_config(
         encoding="utf-8",
     )
     assert "myprovider" in model._connected_providers((custom,))
-    offered = completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]
+    offered = completers._complete_model_verb_values(
         "my", argparse.Namespace(role="worker", config=[custom])
     )
     assert offered == ["myprovider"]
-    assert not completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]
+    assert not completers._complete_model_verb_values(
         "open", argparse.Namespace(role="worker", config=[custom])
     )
     # No role typed yet: nothing, so the role slot stays the role choices.
-    assert not completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]
+    assert not completers._complete_model_verb_values(
         "my", argparse.Namespace(role=None, config=[custom])
     )
 
@@ -419,7 +405,7 @@ def test_model_verb_completion_offers_the_typed_configs_routes(
         '[models.worker]\nmodel = "anthropic/claude-x"\n',
         encoding="utf-8",
     )
-    offered = completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]
+    offered = completers._complete_model_verb_values(
         "anthropic/", argparse.Namespace(role="worker", config=[custom])
     )
     assert offered == ["anthropic/claude-a", "anthropic/claude-x"]
@@ -444,7 +430,7 @@ def test_forward_offers_the_newest_sessions_ports_in_its_first_slot(
 
     monkeypatch.setattr("agent6.sessions.process.listening_ports", _ports)
 
-    offered = completers._complete_session_ports(  # pyright: ignore[reportPrivateUsage]
+    offered = completers._complete_session_ports(
         prefix="8",
         parsed_args=argparse.Namespace(target=""),
         action=object(),
@@ -488,24 +474,14 @@ def test_state_restricted_machine_verbs_offer_only_machines_they_accept(
 
     def offered(verb: str) -> list[str]:
         parser = cli_parser.build_parser()
-        subs = next(
-            a
-            for a in parser._actions  # pyright: ignore[reportPrivateUsage]
-            if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
-        )
+        subs = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
         machine_subs = next(
-            a
-            for a in subs.choices["machine"]._actions  # pyright: ignore[reportPrivateUsage]
-            if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
+            a for a in subs.choices["machine"]._actions if isinstance(a, argparse._SubParsersAction)
         )
-        action = next(
-            a
-            for a in machine_subs.choices[verb]._actions  # pyright: ignore[reportPrivateUsage]
-            if a.dest == "machine_id"
-        )
+        action = next(a for a in machine_subs.choices[verb]._actions if a.dest == "machine_id")
         completer = cast(
             Callable[[str], list[str]],
-            action.completer,  # pyright: ignore[reportAttributeAccessIssue]
+            action.completer,
         )
         return sorted(completer(""))
 
@@ -527,15 +503,13 @@ def test_machine_files_complete_relative_to_the_working_directory(
     instance.mkdir(parents=True)
     (instance / "machine.asm.toml").write_text("", encoding="utf-8")
 
-    assert completers._complete_machine_files("de") == ["demo.asm.toml"]  # pyright: ignore[reportPrivateUsage]
-    assert completers._complete_machine_files("sub/") == ["sub/inner.asm.toml"]  # pyright: ignore[reportPrivateUsage]
-    assert completers._complete_machine_files("./de") == ["./demo.asm.toml"]  # pyright: ignore[reportPrivateUsage]
-    assert completers._complete_machine_files(str(tmp_path / "de")) == [  # pyright: ignore[reportPrivateUsage]
+    assert completers._complete_machine_files("de") == ["demo.asm.toml"]
+    assert completers._complete_machine_files("sub/") == ["sub/inner.asm.toml"]
+    assert completers._complete_machine_files("./de") == ["./demo.asm.toml"]
+    assert completers._complete_machine_files(str(tmp_path / "de")) == [
         str(tmp_path / "demo.asm.toml")
     ]
-    assert completers._complete_machine_files(str(instance)) == [  # pyright: ignore[reportPrivateUsage]
-        str(instance / "machine.asm.toml")
-    ]
+    assert completers._complete_machine_files(str(instance)) == [str(instance / "machine.asm.toml")]
 
 
 def test_finding_steer_completion_includes_stopped_resumable_sessions(
@@ -582,18 +556,10 @@ def test_answer_offers_the_sessions_holding_a_pending_question(
         ),
         encoding="utf-8",
     )
-    offered = completers._complete_answerable_ids("")  # pyright: ignore[reportPrivateUsage]
+    offered = completers._complete_answerable_ids("")
     assert offered == ["asked-five-EEEEEE"]
     parser = cli_parser.build_parser()
-    subs = next(
-        a
-        for a in parser._actions  # pyright: ignore[reportPrivateUsage]
-        if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
-    )
-    target = next(
-        a
-        for a in subs.choices["answer"]._actions  # pyright: ignore[reportPrivateUsage]
-        if a.dest == "target"
-    )
+    subs = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    target = next(a for a in subs.choices["answer"]._actions if a.dest == "target")
     completer = getattr(target, "completer", None)
     assert callable(completer) and completer("") == offered

@@ -280,7 +280,7 @@ def test_tools_list_follows_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
         return {"jsonrpc": "2.0", "id": payload["id"], "result": result}
 
     monkeypatch.setattr(mcp_http.HttpTransport, "send", send)
-    srv = mcp_client._MCPServer(  # pyright: ignore[reportPrivateUsage]
+    srv = mcp_client._MCPServer(
         name="pages",
         command=(),
         startup_timeout_s=5.0,
@@ -319,7 +319,7 @@ def test_tools_list_pagination_is_bounded(monkeypatch: pytest.MonkeyPatch) -> No
         return {"jsonrpc": "2.0", "id": payload["id"], "result": result}
 
     monkeypatch.setattr(mcp_http.HttpTransport, "send", send)
-    srv = mcp_client._MCPServer(  # pyright: ignore[reportPrivateUsage]
+    srv = mcp_client._MCPServer(
         name="endless",
         command=(),
         startup_timeout_s=5.0,
@@ -457,7 +457,7 @@ def test_timed_out_requests_leave_no_pending_residue() -> None:
         ]
     )
     try:
-        srv = mgr._servers["fake"]  # pyright: ignore[reportPrivateUsage]
+        srv = mgr._servers["fake"]
         for _ in range(2):
             with pytest.raises(mcp_client.MCPError, match="timed out"):
                 mgr.call(f"{mcp_client.MCP_TOOL_PREFIX}fake__slow", {})
@@ -465,8 +465,8 @@ def test_timed_out_requests_leave_no_pending_residue() -> None:
         # have flushed well before 2s; the drop is unobservable from outside,
         # so wait past that point and then prove nothing was retained.
         time.sleep(2.0)
-        with srv._pending_cv:  # pyright: ignore[reportPrivateUsage]
-            pending = dict(srv._pending)  # pyright: ignore[reportPrivateUsage]
+        with srv._pending_cv:
+            pending = dict(srv._pending)
         assert pending == {}
     finally:
         mgr.close()

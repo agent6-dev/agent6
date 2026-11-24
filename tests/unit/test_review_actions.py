@@ -343,26 +343,20 @@ def test_a_live_fix_in_delivery_reads_queued_not_unknown(
         ),
     )
     events = event_log.EventSink(saved.logs_path)
-    review_actions._emit(  # pyright: ignore[reportPrivateUsage]
+    review_actions._emit(
         events,
         request,
         "fix.requested",
         finding_id=finding.finding_id,
-        target=dataclasses.asdict(
-            review_actions._target(view, finding)  # pyright: ignore[reportPrivateUsage]
-        ),
+        target=dataclasses.asdict(review_actions._target(view, finding)),
         action="live-steer",
     )
     monkeypatch.setattr(process, "worker_is_alive", _alive)
-    (result,) = review_actions._wait(  # pyright: ignore[reportPrivateUsage]
-        saved.session_dir, request, 0.2
-    )
+    (result,) = review_actions._wait(saved.session_dir, request, 0.2)
     assert result.status == "queued"
     assert "queued" in result.message and "unknown" not in result.message
     monkeypatch.setattr(process, "worker_is_alive", _dead)
-    (dead,) = review_actions._wait(  # pyright: ignore[reportPrivateUsage]
-        saved.session_dir, request, 0.2
-    )
+    (dead,) = review_actions._wait(saved.session_dir, request, 0.2)
     assert dead.status == "delivery_unknown"
 
 

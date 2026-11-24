@@ -190,7 +190,7 @@ def test_auto_merge_needs_a_model_finish_and_a_vouched_for_tree() -> None:
     )
     for bad in ("failed", "unverified"):
         assert not finalize.auto_merge_eligible(
-            _result(completed=True, reason="finish_session", verification=bad)  # pyright: ignore[reportArgumentType]
+            _result(completed=True, reason="finish_session", verification=bad)
         )
     assert not finalize.auto_merge_eligible(
         _result(completed=False, reason="max_turns", verification="passed")

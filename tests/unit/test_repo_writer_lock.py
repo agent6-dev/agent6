@@ -381,7 +381,7 @@ def test_runs_show_reports_a_parked_run_as_parked(
     word; "unknown (no events yet)" reads as a broken husk and hides the one action that starts it.
     """
     from agent6.app import run
-    from agent6.ui.cli import sessions_show  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import sessions_show
 
     state = paths.state_dir(repo)
     holder_fd = lock.acquire_repo_writer(state, repo, "run-LIVE")

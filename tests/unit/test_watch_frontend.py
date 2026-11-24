@@ -85,7 +85,7 @@ def _attach_under_pty(session_dir: pathlib.Path) -> tuple[int, int]:
         code = 1
         try:
             view = _view()
-            fe = plan_watch._CliFrontEnd(session_dir, view)  # pyright: ignore[reportPrivateUsage]
+            fe = plan_watch._CliFrontEnd(session_dir, view)
             for event in fe.open_prompts_at_attach(session_dir / "logs.jsonl"):
                 fe.handle(event)
             os.write(1, "".join(f"{n}\n" for n in view.notices).encode() + b"DONE\n")
@@ -142,7 +142,7 @@ def test_open_prompt_at_attach_is_answered_and_written(
             {"type": "approval.prompt", "id": "approval-1", "prompt": "run `ls`?"},
         ],
     )
-    fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
+    fe = plan_watch._CliFrontEnd(tmp_path, _view())
     opens = fe.open_prompts_at_attach(log)
     assert [(e["type"], e["id"]) for e in opens] == [("approval.prompt", "approval-1")]
     for event in opens:
@@ -165,7 +165,7 @@ def test_already_answered_prompt_is_not_reasked(tmp_path: pathlib.Path, monkeypa
             {"type": "approval.answer", "id": "approval-1", "approved": True},
         ],
     )
-    fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
+    fe = plan_watch._CliFrontEnd(tmp_path, _view())
     assert fe.open_prompts_at_attach(log) == []
     # replay through react(): the historical prompt is skipped (answered).
     replay: list[dict[str, Any]] = [
@@ -185,7 +185,7 @@ def test_react_answers_a_new_live_question(tmp_path: pathlib.Path, monkeypatch: 
     log = tmp_path / "logs.jsonl"
     history: list[dict[str, Any]] = [{"type": "session.start"}]
     _write_log(log, history)
-    fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
+    fe = plan_watch._CliFrontEnd(tmp_path, _view())
     fe.open_prompts_at_attach(log)
     for ev in history:  # the follow loop replays the scanned prefix first
         fe.react(ev)
@@ -221,7 +221,7 @@ def test_attach_replay_does_not_reask_an_answered_prompt(
     ]
     _write_log(log, history)
 
-    fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
+    fe = plan_watch._CliFrontEnd(tmp_path, _view())
     assert fe.open_prompts_at_attach(log) == []  # nothing open
     for ev in history:  # _watch_transcript replays from the start
         fe.react(ev)
@@ -258,7 +258,7 @@ def test_resumed_execution_reuses_prompt_ids_and_is_still_answered(
         {"type": "session.stop", "reason": "steer_abort"},
     ]
     _write_log(log, leg1)
-    fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
+    fe = plan_watch._CliFrontEnd(tmp_path, _view())
     assert fe.open_prompts_at_attach(log) == []  # execution 1 is fully answered
     for ev in leg1:  # the follow loop replays the whole log first
         fe.react(ev)
@@ -292,7 +292,7 @@ def test_an_answer_that_lost_to_another_surface_is_reported(
     _write_log(log, [{"type": "session.start"}, event])
     assert ipc.write_answer(tmp_path, "approval-1", "no")
     view = _view()
-    fe = plan_watch._CliFrontEnd(tmp_path, view)  # pyright: ignore[reportPrivateUsage]
+    fe = plan_watch._CliFrontEnd(tmp_path, view)
     for opened in fe.open_prompts_at_attach(log):
         fe.handle(opened)
     assert view.notices == [f"[agent6] {ipc.ANSWERED_ELSEWHERE}"]
@@ -325,9 +325,9 @@ def test_an_unscoped_approval_offers_no_session_choice(
         },
     ]
     _write_log(log, history)
-    live = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
+    live = plan_watch._CliFrontEnd(tmp_path, _view())
     _follow(live, log)
-    attached = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
+    attached = plan_watch._CliFrontEnd(tmp_path, _view())
     for event in attached.open_prompts_at_attach(log):
         attached.handle(event)
     assert seen == [False, False]
@@ -457,7 +457,7 @@ def test_a_line_typed_as_the_prompt_closes_writes_no_answer(
     process.write_worker_pid(tmp_path, os.getpid())
     _write_log(log, [{"type": "session.start"}, _OPEN_APPROVAL])
     view = _view()
-    fe = plan_watch._CliFrontEnd(tmp_path, view)  # pyright: ignore[reportPrivateUsage]
+    fe = plan_watch._CliFrontEnd(tmp_path, view)
     for event in fe.open_prompts_at_attach(log):
         fe.handle(event)
     assert view.notices == [f"[agent6] {ipc.ANSWERED_ELSEWHERE}"]
@@ -484,7 +484,7 @@ def test_a_prompt_whose_execution_ended_takes_no_answer(
     process.write_worker_pid(tmp_path, os.getpid())
     _write_log(log, [{"type": "session.start"}, _OPEN_APPROVAL])
     view = _view()
-    fe = plan_watch._CliFrontEnd(tmp_path, view)  # pyright: ignore[reportPrivateUsage]
+    fe = plan_watch._CliFrontEnd(tmp_path, view)
     for event in fe.open_prompts_at_attach(log):
         fe.handle(event)
     assert view.notices == ["[agent6] the run ended before this prompt was answered"]
@@ -517,7 +517,7 @@ def test_an_older_executions_answer_does_not_close_the_new_prompt(
     slot = ipc.approvals_dir(tmp_path) / "approval-1.answer"
 
     at_attach = _view()
-    fe = plan_watch._CliFrontEnd(tmp_path, at_attach)  # pyright: ignore[reportPrivateUsage]
+    fe = plan_watch._CliFrontEnd(tmp_path, at_attach)
     for event in fe.open_prompts_at_attach(log):
         fe.handle(event)
     assert (asked, at_attach.notices) == (["execution 2 ok?"], [])
@@ -527,7 +527,7 @@ def test_an_older_executions_answer_does_not_close_the_new_prompt(
     slot.unlink()
     asked.clear()
     live = _view()
-    _follow(plan_watch._CliFrontEnd(tmp_path, live), log)  # pyright: ignore[reportPrivateUsage]
+    _follow(plan_watch._CliFrontEnd(tmp_path, live), log)
     assert asked == ["execution 2 ok?"]
     assert live.notices == [f"[agent6] {ipc.ANSWERED_ELSEWHERE} (source: stdin)"]
     assert slot.read_text(encoding="utf-8") == "yes"
@@ -561,7 +561,7 @@ def test_two_open_prompts_each_close_on_their_own_answer(
         ],
     )
     view = _view()
-    fe = plan_watch._CliFrontEnd(tmp_path, view)  # pyright: ignore[reportPrivateUsage]
+    fe = plan_watch._CliFrontEnd(tmp_path, view)
     for event in fe.open_prompts_at_attach(log):
         fe.handle(event)
     assert asked == ["first?"]
@@ -588,7 +588,7 @@ def test_attach_follows_on_after_a_prompt_answered_elsewhere(tmp_path: pathlib.P
             sys.stdin = open(0, closefd=False)  # noqa: SIM115  # held until the child exits
             sys.stdout = open(1, "w", closefd=False)  # noqa: SIM115  # held until the child exits
             sys.stderr = open(2, "w", closefd=False)  # noqa: SIM115  # held until the child exits
-            code = plan_watch._watch_transcript(tmp_path)  # pyright: ignore[reportPrivateUsage]
+            code = plan_watch._watch_transcript(tmp_path)
             sys.stdout.flush()
         finally:
             os._exit(code)
@@ -644,7 +644,7 @@ def test_attach_prompts_for_no_queued_or_carried_question(tmp_path: pathlib.Path
         queued,
     ]
     _write_log(log, history)
-    fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
+    fe = plan_watch._CliFrontEnd(tmp_path, _view())
     assert fe.open_prompts_at_attach(log) == []
     handled: list[str] = []
     fe.handle = lambda event: handled.append(str(event.get("id")))  # type: ignore[method-assign]

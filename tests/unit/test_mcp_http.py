@@ -119,7 +119,7 @@ def test_a_failed_initialized_notification_fails_the_handshake(
         pytest.fail(f"unexpected request: {payload}")
 
     monkeypatch.setattr(tools_mcp_http.HttpTransport, "send", send)
-    srv = mcp_client._MCPServer(  # pyright: ignore[reportPrivateUsage]
+    srv = mcp_client._MCPServer(
         name="s",
         command=(),
         startup_timeout_s=5.0,
@@ -149,7 +149,7 @@ def test_a_transport_error_is_redacted_of_the_token(monkeypatch: pytest.MonkeyPa
         raise tools_mcp_http.MCPHttpError("proxy rejected bearer secret-token-value")
 
     monkeypatch.setattr(tools_mcp_http.HttpTransport, "send", send)
-    srv = mcp_client._MCPServer(  # pyright: ignore[reportPrivateUsage]
+    srv = mcp_client._MCPServer(
         name="s",
         command=(),
         startup_timeout_s=5.0,
@@ -458,7 +458,7 @@ def test_another_requests_answer_is_not_taken_as_this_one() -> None:
     )
     url, _seen, httpd = _serve(None, sse=True, body=body)
     try:
-        srv = mcp_client._MCPServer(  # pyright: ignore[reportPrivateUsage]
+        srv = mcp_client._MCPServer(
             name="s",
             command=(),
             startup_timeout_s=5.0,
@@ -466,7 +466,7 @@ def test_another_requests_answer_is_not_taken_as_this_one() -> None:
             http=tools_mcp_http.HttpTransport(name="s", url=url),
         )
         with pytest.raises(mcp_client.MCPError, match="a response to id 4242"):
-            srv._request("tools/call", {}, timeout_s=5.0)  # pyright: ignore[reportPrivateUsage]
+            srv._request("tools/call", {}, timeout_s=5.0)
     finally:
         httpd.shutdown()
 
@@ -475,7 +475,7 @@ def test_a_server_request_is_not_taken_as_a_response() -> None:
     body = b'data: {"jsonrpc":"2.0","id":1,"method":"sampling/createMessage","params":{}}\n\n'
     url, _seen, httpd = _serve(None, sse=True, body=body)
     try:
-        srv = mcp_client._MCPServer(  # pyright: ignore[reportPrivateUsage]
+        srv = mcp_client._MCPServer(
             name="s",
             command=(),
             startup_timeout_s=5.0,
@@ -483,7 +483,7 @@ def test_a_server_request_is_not_taken_as_a_response() -> None:
             http=tools_mcp_http.HttpTransport(name="s", url=url),
         )
         with pytest.raises(mcp_client.MCPError, match="its own"):
-            srv._request("tools/call", {}, timeout_s=5.0)  # pyright: ignore[reportPrivateUsage]
+            srv._request("tools/call", {}, timeout_s=5.0)
     finally:
         httpd.shutdown()
 

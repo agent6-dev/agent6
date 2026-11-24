@@ -397,11 +397,11 @@ def test_replayed_history_does_not_reset_the_idle_timer() -> None:
         wedged_at = time.time() - 2400
         view.feed({"type": "model.call", "actor": "worker", "model": "m", "ts": wedged_at - 1})
         view.feed({"type": "tool.call", "name": "run_command", "args_preview": {}, "ts": wedged_at})
-        idle = time.monotonic() - view._last_output_at  # pyright: ignore[reportPrivateUsage]
+        idle = time.monotonic() - view._last_output_at
         assert idle >= 2399, f"replay reset the idle timer to {idle:.1f}s"
         # A ts-less (live, foreign) event keeps the arrival behaviour.
         view.feed({"type": "tool.result", "name": "run_command", "ok": True, "summary": "ok"})
-        idle = time.monotonic() - view._last_output_at  # pyright: ignore[reportPrivateUsage]
+        idle = time.monotonic() - view._last_output_at
         assert idle < 5
     finally:
         view.close()

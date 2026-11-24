@@ -189,7 +189,7 @@ def test_existing_dev_container_then_owned_restart(
         first = container.prepare(selected)
         try:
             handle = first.start_background(("/bin/sleep", "60"))
-            client = first._proc  # pyright: ignore[reportPrivateUsage]
+            client = first._proc
             _kill_client_tree(runtime, client.pid)
             client.wait(timeout=10)
             with pytest.raises(jail.JailUnavailableError, match="protocol failed"):

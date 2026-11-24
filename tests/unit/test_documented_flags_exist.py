@@ -42,7 +42,7 @@ def _cli_flags() -> set[str]:
     found: set[str] = set()
 
     def walk(parser: argparse.ArgumentParser) -> None:
-        for action in parser._actions:  # pyright: ignore[reportPrivateUsage]
+        for action in parser._actions:
             found.update(o for o in action.option_strings if o.startswith("--"))
             # Subparsers hang off a dict-valued `choices`; a plain argument's is a tuple.
             if isinstance(action.choices, dict):

@@ -246,8 +246,8 @@ def test_a_stop_does_not_kill_a_worker_from_a_new_resume(tmp_path: pathlib.Path)
     replacement = _spawn("import time; time.sleep(60)")
     process.write_worker_pid(d, first.pid)
     answer: list[stop.StopOutcome] = []
-    original_poll = stop_mod._POLL_S  # pyright: ignore[reportPrivateUsage]
-    stop_mod._POLL_S = 0.3  # pyright: ignore[reportPrivateUsage]
+    original_poll = stop_mod._POLL_S
+    stop_mod._POLL_S = 0.3
     stopper = threading.Thread(
         target=lambda: answer.append(stop.stop_session(d, wait_s=0.5, grace_s=0.1))
     )
@@ -265,7 +265,7 @@ def test_a_stop_does_not_kill_a_worker_from_a_new_resume(tmp_path: pathlib.Path)
         assert replacement.poll() is None, "the stop killed the replacement worker"
         assert answer and answer[0].how == "stopped"
     finally:
-        stop_mod._POLL_S = original_poll  # pyright: ignore[reportPrivateUsage]
+        stop_mod._POLL_S = original_poll
         for proc in (first, replacement):
             proc.kill()
             proc.wait()

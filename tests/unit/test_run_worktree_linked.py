@@ -50,7 +50,7 @@ def test_start_records_only_a_linked_checkouts_git_grant_before_tools(
         recorded = sessions_manifest.read_manifest(session_dir).worktree_git_dir
         assert recorded == ((repo / ".git").resolve() if linked else None)
         built = real_tools(config, **kw)
-        access = built.dispatcher._command_access  # pyright: ignore[reportPrivateUsage]
+        access = built.dispatcher._command_access
         assert access is not None
         policies.append(access.policy)
         return built

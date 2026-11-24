@@ -396,13 +396,13 @@ def test_close_drops_an_idle_conversation_and_cancels_a_running_one(
     acp_id = busy.new({"cwd": str(cwd)})["sessionId"]
     out = io.BytesIO()
     connection = acp_server.ACPServer(stdin=io.BytesIO(), stdout=out, sessions=busy)
-    connection._handle(  # pyright: ignore[reportPrivateUsage]
+    connection._handle(
         _msg(5, "session/prompt", sessionId=acp_id, prompt=[{"type": "text", "text": "go"}])
     )
     session = busy.get({"sessionId": acp_id})
     assert session.is_running()
-    connection._handle(_msg(6, "session/close", sessionId=acp_id))  # pyright: ignore[reportPrivateUsage]
-    connection._handle(  # pyright: ignore[reportPrivateUsage]
+    connection._handle(_msg(6, "session/close", sessionId=acp_id))
+    connection._handle(
         _msg(7, "session/prompt", sessionId=acp_id, prompt=[{"type": "text", "text": "more"}])
     )
     assert session.cancelled and session.closed

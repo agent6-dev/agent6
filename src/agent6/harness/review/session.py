@@ -420,6 +420,6 @@ def _clip_tail(text: str, limit: int) -> str:
 def _int(value: object) -> int:
     """Return the value as an int, 0 when it is not one."""
     try:
-        return int(value)  # pyright: ignore[reportArgumentType]
+        return int(value)  # pyrefly: ignore[bad-argument-type]
     except (TypeError, ValueError):
         return 0

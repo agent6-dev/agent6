@@ -29,7 +29,7 @@ from agent6.vcs.git import policy as git_policy
 
 
 @pytest.fixture(autouse=True)
-def _reset() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
+def _reset() -> Iterator[None]:
     yield
     git_policy.set_policy(git_policy.GitPolicy())
 
@@ -531,7 +531,7 @@ def test_blame_reads_a_private_copy_of_the_ignore_revs_file(
         if args and args[0] == "blame":
             (root / "ignore.txt").unlink()
             (root / "ignore.txt").symlink_to(secret)
-        return real_run(cwd, *args, **kwargs)  # pyright: ignore[reportArgumentType]
+        return real_run(cwd, *args, **kwargs)  # pyrefly: ignore[bad-argument-type]
 
     monkeypatch.setattr(git_command, "run", swapping)
     rows = git_files.blame_lines(root, first, "f.txt", b"v1\n", lines=1)

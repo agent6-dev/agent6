@@ -58,7 +58,7 @@ def test_run_mtime_is_log_activity_not_dir_mtime(tmp_path: pathlib.Path) -> None
     # Opening the dashboard writes a front-end claim, bumping the dir mtime well past the log's.
     process.register_frontend(rd, 123)
     os.utime(rd, (5000, 5000))
-    assert session_mtime(rd) == 1000.0  # pyright: ignore[reportPrivateUsage]
+    assert session_mtime(rd) == 1000.0
 
 
 def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: pathlib.Path) -> None:
@@ -67,7 +67,7 @@ def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: pathlib.Path) -
     rd = tmp_path / "sessions" / "runs" / "fresh"
     rd.mkdir(parents=True)
     os.utime(rd, (2000, 2000))
-    assert session_mtime(rd) == 2000.0  # pyright: ignore[reportPrivateUsage] - no log yet -> dir mtime
+    assert session_mtime(rd) == 2000.0  # no log yet -> dir mtime
 
 
 def test_question_bridge_round_trip(tmp_path: pathlib.Path) -> None:
@@ -149,11 +149,11 @@ def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(
             table = screen.query_one("#sessions", widgets.DataTable)
             assert table.row_count == 3
             # Delete the run currently shown in the MIDDLE row, then refresh.
-            vanished = screen._runs[1]  # pyright: ignore[reportPrivateUsage]
+            vanished = screen._runs[1]
             shutil.rmtree(vanished)
             screen.action_refresh()
             await pilot.pause()
-            runs = screen._runs  # pyright: ignore[reportPrivateUsage]
+            runs = screen._runs
             assert table.row_count == 2
             assert len(runs) == 2  # pre-fix this stayed 3 (the vanished run kept)
             assert vanished not in runs
@@ -447,7 +447,7 @@ def test_a_refusal_after_the_screen_was_left_still_reaches_the_operator(
             toasts: list[tuple[str, str]] = []
             while not toasts and time.monotonic() < deadline:
                 await pilot.pause(0.05)
-                toasts = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+                toasts = [(str(n.message), n.severity) for n in app._notifications]
             assert ("REFUSING: the tree is dirty", "error") in toasts, toasts
 
     asyncio.run(scenario())
@@ -605,7 +605,7 @@ def test_the_hub_merges_the_run_in_this_process(
     from agent6.ui.tui import home
     from tests.unit import test_cli_sessions_merge as merge_tests
 
-    merge_tests._setup_run(  # pyright: ignore[reportPrivateUsage]
+    merge_tests._setup_run(
         tmp_path, "r1-AAAAAA", commits=[("a.txt", "a\n", "agent6 turn 1: add a")]
     )
 
@@ -615,7 +615,7 @@ def test_the_hub_merges_the_run_in_this_process(
     monkeypatch.setattr(spawn, "run_cli_capture", _no_child)
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "r1-AAAAAA"
 
-    end, msg = home._merge_run(tmp_path, session_dir)  # pyright: ignore[reportPrivateUsage]
+    end, msg = home._merge_run(tmp_path, session_dir)
 
     assert end.code == 0
     assert msg.startswith("merged agent6/r1-AAAAAA into main (")
@@ -935,13 +935,13 @@ def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
             await pilot.press("down")  # cursor onto r2
             scr = app.screen
             assert isinstance(scr, tui_home.HomeScreen)
-            runs = scr._runs  # pyright: ignore[reportPrivateUsage]
+            runs = scr._runs
             assert runs[table().cursor_row].name == "r2"
             # r1 gets fresh activity and jumps to the top: order becomes r1, r3, r2.
             os.utime(runs[2] / "logs.jsonl", (9000, 9000))
             await pilot.press("r")
             await pilot.pause()
-            runs = scr._runs  # pyright: ignore[reportPrivateUsage]
+            runs = scr._runs
             assert runs[table().cursor_row].name == "r2"
 
     asyncio.run(scenario())
@@ -1022,7 +1022,7 @@ def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
         seen.append(base)
 
     monkeypatch.setattr(home, "run_home", _capture)
-    assert plan_watch._cmd_tui() == 0  # pyright: ignore[reportPrivateUsage]
+    assert plan_watch._cmd_tui() == 0
     assert seen == [paths.state_dir(tmp_path)]
 
 
@@ -1337,13 +1337,13 @@ def test_the_hub_folds_a_groups_children_and_space_expands_them(tmp_path: pathli
             screen = app.screen
             assert isinstance(screen, tui_home.HomeScreen)
             table = screen.query_one("#sessions", widgets.DataTable)
-            runs = screen._runs  # pyright: ignore[reportPrivateUsage]
+            runs = screen._runs
             assert table.row_count == 1 and [rd.name for rd in runs] == ["fan"]
             ids = [str(c.label) for c in table.columns.values()].index("id")
             assert "(2 children)" in str(table.get_row_at(0)[ids])
             screen.action_toggle_children()
             await pilot.pause()
-            runs = screen._runs  # pyright: ignore[reportPrivateUsage]
+            runs = screen._runs
             assert [rd.name for rd in runs] == ["fan", "fan-l1", "fan-l2"]
             assert "(2 children)" not in str(table.get_row_at(0)[ids])
             assert "└ fan-l1" in str(table.get_row_at(1)[ids])

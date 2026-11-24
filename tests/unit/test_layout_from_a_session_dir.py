@@ -32,7 +32,7 @@ def test_the_end_of_run_task_tree_renders_for_a_plan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The task tree reads a plan's graph from its own bucket, and a failure is reported."""
-    from agent6.ui.cli import sessions_show  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import sessions_show
 
     monkeypatch.chdir(tmp_path)
     session = sessions_layout.bucket_dir(tmp_path / "state", "plans") / "brave-oak-AAAAAA"
@@ -90,7 +90,7 @@ def test_a_task_tree_render_failure_is_not_an_empty_section(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A failure while rendering the tree reaches the CLI's reporter, never a silent exit 0."""
-    from agent6.ui.cli import sessions_show  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import sessions_show
 
     monkeypatch.chdir(tmp_path)
     session = sessions_layout.bucket_dir(tmp_path / "state", "plans") / "brave-oak-BBBBBB"

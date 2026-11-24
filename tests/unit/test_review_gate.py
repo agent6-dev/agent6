@@ -178,7 +178,7 @@ def test_before_finish_panel_revokes_finish_and_injects_findings() -> None:
     )
     with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         conversation = loop_conversation.Conversation.from_wire(_MSGS)
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="S",
             conversation=conversation,
             tool_calls=0,
@@ -212,7 +212,7 @@ def test_before_finish_panel_satisfied_accepts_finish() -> None:
         review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]),
     )
     with mock.patch.object(review_gate.ReviewGate, "critique", panel):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="S",
             conversation=loop_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
@@ -249,7 +249,7 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
         ),
     )
     with mock.patch.object(review_gate.ReviewGate, "critique", panel):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="S",
             conversation=loop_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
@@ -276,7 +276,7 @@ def test_trigger_off_never_runs_a_panel() -> None:
         review=review_gate.ReviewSettings(when="never", reviewers=[mock.MagicMock()]),
     )
     with mock.patch.object(review_gate.ReviewGate, "critique", panel):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="S",
             conversation=loop_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
@@ -324,7 +324,7 @@ def test_silent_finish_panel_revokes_and_continues() -> None:
     )
     with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         conversation = loop_conversation.Conversation.from_wire(_MSGS)
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="S",
             conversation=conversation,
             tool_calls=0,
@@ -385,7 +385,7 @@ def test_periodic_panel_fires_every_n_turns() -> None:
         mock.patch.object(review_gate.ReviewGate, "critique", panel),
         mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha"),
     ):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="S",
             conversation=loop_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
@@ -419,7 +419,7 @@ def test_periodic_panel_injects_text_into_next_user_msg() -> None:
     )
     conversation = loop_conversation.Conversation.from_wire(_MSGS)
     with mock.patch.object(review_gate.ReviewGate, "critique", panel):
-        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        wf._drive_loop(
             system="S",
             conversation=conversation,
             tool_calls=0,
@@ -462,7 +462,7 @@ def test_on_verify_fail_panel_fires_only_on_nonzero_exit() -> None:
     )
     conversation = loop_conversation.Conversation.from_wire(_MSGS)
     with mock.patch.object(review_gate.ReviewGate, "critique", panel):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(
             system="S",
             conversation=conversation,
             tool_calls=0,
@@ -500,7 +500,7 @@ def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
         review=review_gate.ReviewSettings(when="verify_fail", reviewers=[mock.MagicMock()]),
     )
     with mock.patch.object(review_gate.ReviewGate, "critique", panel):
-        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        wf._drive_loop(
             system="S",
             conversation=loop_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
@@ -533,8 +533,8 @@ def _settle(wf: loop.Harness, state: Any, turn: Any) -> Any:
     """The settled advisor's answer, applied through the loop (a stop runs the end gates)."""
     from agent6.harness import guards
 
-    ctx = wf._turn_context(state, turn=turn.number, execution_start=1)  # pyright: ignore[reportPrivateUsage]
-    return wf._take(state, turn, ctx, guards.verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=turn.number, execution_start=1)
+    return wf._take(state, turn, ctx, guards.verify_settled(turn, state, ctx))
 
 
 def test_a_settled_end_is_reviewed_like_a_finish() -> None:
@@ -591,7 +591,7 @@ def test_a_periodic_finding_on_a_settling_turn_is_delivered_once() -> None:
     turn = _idle_turn()
     with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         wf.review_gate.triggers(state, turn)
-        wf._turn_notices(state, turn)  # pyright: ignore[reportPrivateUsage]
+        wf._turn_notices(state, turn)
         _settle(wf, state, turn)
     delivered = [
         item
@@ -745,7 +745,7 @@ def test_a_red_settled_stop_names_itself_and_spends_no_finish_return() -> None:
         {"type": "finish.refused.verify", "turn": 9, "nudges_used": 1, "trigger": "settled"}
     ]
     # The model's own red finish still has both of its returns.
-    ctx = wf._turn_context(state, turn=10, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=10, execution_start=1)
     finishing = _idle_turn()
     finishing.finish = finish_gates.FinishCall("finish_session", "done")
     finishing.ending = "finish_session"
@@ -794,7 +794,7 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     conv = loop_conversation.Conversation()
     with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         turn = loop_state.TurnState(number=5, resp=_resp("Done."), assistant=mock.MagicMock())
-        ctx = wf._turn_context(state, turn=5, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+        ctx = wf._turn_context(state, turn=5, execution_start=1)
         assert quiet_turns.handle_silent_finish(wf, "Done.", conv, state, turn, ctx) is None
         texts = [b["text"] for m in conv.to_wire() for b in m["content"] if b.get("type") == "text"]
         assert any("[harness verify] finish: verify_command exit 1" in t for t in texts)
@@ -850,7 +850,7 @@ def test_before_finish_panel_reviews_a_model_controlled_run(tmp_path: pathlib.Pa
         events=event_log.EventSink(log),
     )
     with mock.patch.object(review_gate.ReviewGate, "critique", panel):
-        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        wf._drive_loop(
             system="S",
             conversation=loop_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,

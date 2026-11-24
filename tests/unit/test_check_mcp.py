@@ -69,7 +69,7 @@ def test_an_http_only_mcp_check_does_not_create_a_command_network(
         {"mcp": {"enabled": True, "servers": {"remote": {"url": "https://mcp.example"}}}}
     )
 
-    checks = check_cmds._doctor_check_mcp(cfg)  # pyright: ignore[reportPrivateUsage]
+    checks = check_cmds._doctor_check_mcp(cfg)
 
     assert [(check.name, check.status) for check in checks] == [("mcp.remote", "PASS")]
 
@@ -100,7 +100,7 @@ def test_mcp_check_applies_the_runs_config_refusals_before_a_probe(
         }
     )
 
-    checks = check_cmds._doctor_check_mcp(cfg)  # pyright: ignore[reportPrivateUsage]
+    checks = check_cmds._doctor_check_mcp(cfg)
 
     assert [(check.name, check.status) for check in checks] == [("mcp", "FAIL")]
     assert f"sandbox.{setting} = {value!r} requires sandbox.isolation = 'full'" in checks[0].detail
@@ -134,7 +134,7 @@ def test_mcp_check_reports_a_session_network_refusal(
         }
     )
 
-    checks = check_cmds._doctor_check_mcp(cfg)  # pyright: ignore[reportPrivateUsage]
+    checks = check_cmds._doctor_check_mcp(cfg)
 
     assert checks[-1].name == "mcp"
     assert checks[-1].status == "FAIL"
@@ -158,7 +158,7 @@ def test_a_server_script_inside_the_workspace_is_checked(
         {"mcp": {"enabled": True, "servers": {"inrepo": {"command": [_JAIL_PYTHON, "server.py"]}}}}
     )
 
-    checks = check_cmds._doctor_check_mcp(cfg)  # pyright: ignore[reportPrivateUsage]
+    checks = check_cmds._doctor_check_mcp(cfg)
 
     assert [(c.name, c.status) for c in checks] == [("mcp.inrepo", "PASS")], checks
     assert "1 tool," in checks[0].detail

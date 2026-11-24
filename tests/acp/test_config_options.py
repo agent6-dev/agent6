@@ -71,7 +71,7 @@ class _Editor:
     def call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """Send one request and return its reply frame."""
         line = json.dumps({"jsonrpc": "2.0", "id": 7, "method": method, "params": params})
-        self.server._handle(line.encode())  # pyright: ignore[reportPrivateUsage]
+        self.server._handle(line.encode())
         return self.frames()[-1]
 
     def new(self, cwd: pathlib.Path) -> tuple[str, list[dict[str, Any]]]:

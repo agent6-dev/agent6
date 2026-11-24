@@ -245,9 +245,9 @@ def test_a_command_started_mid_sweep_window_is_spared(
 
 
 def _launcher_pids(shells: background.BackgroundShells, shell_id: str) -> set[int]:
-    shell = shells._get(shell_id)  # pyright: ignore[reportPrivateUsage]
+    shell = shells._get(shell_id)
     assert isinstance(shell.job, jail_jobs.SessionJob), "these pin the per-command launcher"
-    return {shell.job._session._proc.pid}  # pyright: ignore[reportPrivateUsage]
+    return {shell.job._session._proc.pid}
 
 
 def _alive(pid: int) -> bool:
@@ -399,7 +399,7 @@ def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: pathlib.P
     def _policy(argv: tuple[str, ...], rw: tuple[pathlib.Path, ...]) -> object:
         return policy.jail_policy(work, Config(), "none", argv, extra_rw_paths=rw)
 
-    view = shells.start(("sh", "-c", "echo mine; sleep 30"), _policy)  # pyright: ignore[reportArgumentType]
+    view = shells.start(("sh", "-c", "echo mine; sleep 30"), _policy)  # pyrefly: ignore[bad-argument-type]
     log = tmp_path / "shells" / "logs" / view.id / "out.log"
     for _ in range(100):
         if log.stat().st_size:
@@ -479,7 +479,7 @@ def test_a_stop_that_did_not_stop_says_so(tmp_path: pathlib.Path) -> None:
 
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
-    shell = shells._get(view.id)  # pyright: ignore[reportPrivateUsage]
+    shell = shells._get(view.id)
     real, shell.job = shell.job, cast("jail_jobs.SessionJob", _Unconfirmed())
     try:
         got = shells.stop(view.id)
@@ -521,7 +521,7 @@ def test_background_jobs_need_no_host_proc_scan(
 
     real_iterdir = pathlib.Path.iterdir
 
-    def no_proc(self: pathlib.Path):  # pyright: ignore[reportMissingParameterType]
+    def no_proc(self: pathlib.Path):
         if str(self) == "/proc":
             raise FileNotFoundError(2, "No such file or directory", "/proc")
         return real_iterdir(self)

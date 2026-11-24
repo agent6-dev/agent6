@@ -181,7 +181,7 @@ def test_the_execution_end_drops_a_deleted_fact_and_starts_a_recreated_one_afres
     wf = _wf(tmp_path)
     state = _state()
     state.memory = guards.MemoryState(wrote=["again"], created=["again"], deleted=["gone", "again"])
-    wf._record_memory_use(state)  # pyright: ignore[reportPrivateUsage]
+    wf._record_memory_use(state)
     use = memory.read_use(tmp_path)
     assert "gone" not in use
     assert use["again"].created is not None and use["again"].created.session == "run-a"
@@ -236,7 +236,7 @@ def test_the_execution_end_persists_what_it_wrote_and_read(tmp_path: pathlib.Pat
     state.memory = guards.MemoryState(
         wrote=["quirk", "edited"], created=["quirk"], read={"quirk": 2, "other": 1}
     )
-    wf._record_memory_use(state)  # pyright: ignore[reportPrivateUsage]
+    wf._record_memory_use(state)
     use = memory.read_use(tmp_path)
     assert use["quirk"].writers == ("run-a",)
     assert use["quirk"].created is not None and use["quirk"].created.session == "run-a"
@@ -250,7 +250,7 @@ def test_the_execution_end_persists_what_it_wrote_and_read(tmp_path: pathlib.Pat
 
 def test_a_execution_that_touched_nothing_writes_no_record(tmp_path: pathlib.Path) -> None:
     wf = _wf(tmp_path)
-    wf._record_memory_use(_state())  # pyright: ignore[reportPrivateUsage]
+    wf._record_memory_use(_state())
     assert not memory.use_path(tmp_path).exists()
 
 

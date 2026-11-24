@@ -67,7 +67,7 @@ def test_a_refusal_does_not_call_an_ask_a_run(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     session_id = _ask(paths.state_dir(tmp_path))
-    ok, message = call(tmp_path, session_id)  # pyright: ignore[reportCallIssue, reportGeneralTypeIssues]
+    ok, message = call(tmp_path, session_id)  # pyrefly: ignore[not-callable]
     assert not ok
     assert "run" not in message, message
 

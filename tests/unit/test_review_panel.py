@@ -622,7 +622,7 @@ def test_the_reviewer_prompt_says_verify_was_not_run_without_a_result() -> None:
 
     A configured gate may not have run yet.
     """
-    from agent6.harness.review import verdict as review_verdict  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.review import verdict as review_verdict
 
     prompt = review_verdict.build_user_message(review_panel.ReviewContext(task="t"))
     assert "VERIFY: not run." in prompt and "none configured" not in prompt
@@ -630,7 +630,7 @@ def test_the_reviewer_prompt_says_verify_was_not_run_without_a_result() -> None:
 
 def test_prior_findings_notice_distinguishes_base_and_head_locations() -> None:
     """Keep the prior findings' sides visible at the same path and line."""
-    from agent6.harness.review import verdict as review_verdict  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.review import verdict as review_verdict
 
     prior = (
         _block("security", _location("foo.py", 11, side="base")),
@@ -641,7 +641,7 @@ def test_prior_findings_notice_distinguishes_base_and_head_locations() -> None:
 
 
 def test_the_reviewer_prompt_carries_the_whole_large_diff() -> None:
-    from agent6.harness.review import verdict as review_verdict  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.review import verdict as review_verdict
 
     diff = "start\n" + "x" * 200_000 + "\nend"
     prompt = review_verdict.build_user_message(review_panel.ReviewContext(task="t", diff=diff))

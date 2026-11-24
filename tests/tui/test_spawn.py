@@ -284,8 +284,8 @@ def test_stderr_tail_starts_at_a_line(tmp_path: pathlib.Path) -> None:
     f = tmp_path / "err"
     f.write_text("REFUSING: " + "x" * 50 + "\n" + "y" * 30 + "\n", encoding="utf-8")
     with f.open("r+", encoding="utf-8") as fh:
-        assert spawn._stderr_tail(fh, limit=40) == "y" * 30 + "\n"  # pyright: ignore[reportPrivateUsage]
-        assert spawn._stderr_tail(fh) == f.read_text(encoding="utf-8")  # pyright: ignore[reportPrivateUsage]
+        assert spawn._stderr_tail(fh, limit=40) == "y" * 30 + "\n"
+        assert spawn._stderr_tail(fh) == f.read_text(encoding="utf-8")
 
 
 def test_run_cli_output_hands_back_stdout_alone_on_success(

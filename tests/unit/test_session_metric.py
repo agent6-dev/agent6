@@ -92,7 +92,7 @@ def test_live_metric_is_visible_on_adoption_and_off_resets_the_guard(
     from agent6.graph import curator as graph_curator
     from agent6.harness import loop_conversation, loop_state, loop_steer, metric_rules
     from agent6.sessions import event_log
-    from tests.unit.test_task_queue_drain import _workflow  # pyright: ignore[reportPrivateUsage]
+    from tests.unit.test_task_queue_drain import _workflow
 
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="one")
     wf = _workflow(graph_curator.GraphCurator(layout), event_log.EventSink(layout.logs_path))

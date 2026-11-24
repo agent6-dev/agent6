@@ -110,7 +110,7 @@ def test_cli_quoted_skill_round_trip(
 def test_completion_offers_quoted_skill_keys(mapping_config: pathlib.Path, command: str) -> None:
     """Completion preserves component boundaries, including ancestor suggestions."""
     args = argparse.Namespace(config_command=command)
-    keys = completers._complete_config_keys("skills.state", parsed_args=args)  # pyright: ignore[reportPrivateUsage]
+    keys = completers._complete_config_keys("skills.state", parsed_args=args)
     assert keys == ["skills.state", 'skills.state."org.some.skill"']
 
 

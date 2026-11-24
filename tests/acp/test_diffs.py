@@ -44,9 +44,9 @@ class _Run:
         """Return the tool updates the tail sends while the run writes its journal."""
         sent: list[dict[str, Any]] = []
         server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-        server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+        server.notify_raw = sent.append  # pyrefly: ignore[bad-assignment, method-assign]
         session = session_mod.Session(acp_id=_RUN, cwd=self.repo, session_id=_RUN)
-        runner.RunBridge(server=server)._stream(  # pyright: ignore[reportPrivateUsage]
+        runner.RunBridge(server=server)._stream(
             session, self.logs, lambda: True, 0, runner.Announced(), objects_dir=self.objects
         )
         return _settled(sent)

@@ -376,7 +376,7 @@ def test_replacement_launcher_cannot_claim_old_jobs(target: conftest.Target) -> 
         handle = first.start_background(("/bin/sleep", "30"))
         assert first.target is not None
         instance = first.target.launcher_instance
-        proc = first._proc  # pyright: ignore[reportPrivateUsage]
+        proc = first._proc
         proc.kill()
         proc.wait(timeout=5)
         with conftest.opened(target) as replacement:

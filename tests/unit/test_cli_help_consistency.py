@@ -21,8 +21,8 @@ _REPO_HELPS = {
 
 
 def _walk(parser: argparse.ArgumentParser, path: str) -> Iterator[tuple[str, argparse.Action]]:
-    for action in parser._actions:  # pyright: ignore[reportPrivateUsage]
-        if isinstance(action, argparse._SubParsersAction):  # pyright: ignore[reportPrivateUsage]
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
             for name, sub in action.choices.items():
                 yield from _walk(sub, f"{path} {name}")
         else:

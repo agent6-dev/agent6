@@ -326,7 +326,7 @@ def test_gist_placeholder_identity_matches_bare_for_a_ranged_read() -> None:
         conv, max_total_bytes=3600, keep_recent=2, gister=_SpyGister({"a.py": "the gist " * 10})
     )
 
-    text = str(conv.messages[1].items[0].content)  # pyright: ignore[reportAttributeAccessIssue]
+    text = str(conv.messages[1].items[0].content)  # pyrefly: ignore[missing-attribute]
     assert text.startswith(compaction_elision.ELISION_GIST_PREFIX)
     ident = re.compile(r": the result of (.+?) was replaced")
     got = ident.search(text)

@@ -99,6 +99,6 @@ def test_the_configured_identity_reaches_the_commit(tmp_path: pathlib.Path) -> N
 
 def test_a_shared_second_level_dir_needs_every_path_under_it() -> None:
     """`docs/a.md` beside `docs/x/b.md` scoped as `x`, a dir the first path is not under."""
-    scope = commit_message._conventional_scope  # pyright: ignore[reportPrivateUsage]
+    scope = commit_message._conventional_scope
     assert scope(["docs/x/a.md", "docs/x/b.md"]) == "x"
     assert scope(["docs/a.md", "docs/x/b.md"]) == ""

@@ -284,8 +284,8 @@ def test_saved_extra_theme_applies_on_mount(cfg: pathlib.Path) -> None:
 
 async def _select_theme(pilot: object, field: forms.ChoiceField, target: str) -> None:
     """Highlight down to *target*, then Space to select it (applies live)."""
-    for _ in range(len(field._options)):  # pyright: ignore[reportPrivateUsage]
-        if field._options[field._cursor] == target:  # pyright: ignore[reportPrivateUsage]
+    for _ in range(len(field._options)):
+        if field._options[field._cursor] == target:
             break
         await pilot.press("down")  # type: ignore[attr-defined]
         await pilot.pause()  # type: ignore[attr-defined]

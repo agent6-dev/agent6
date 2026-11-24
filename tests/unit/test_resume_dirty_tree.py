@@ -830,9 +830,7 @@ def test_the_restore_recipe_names_the_file_as_it_is_not_as_it_prints(
     tmp_path: pathlib.Path,
 ) -> None:
     """A newline in a name reached the pathspec in its printed spelling, naming another file."""
-    text = resume_tree._shared_refusal(  # pyright: ignore[reportPrivateUsage]
-        tmp_path, ["a\nb.py"], end_tree="abc1234", run_branch=None
-    )
+    text = resume_tree._shared_refusal(tmp_path, ["a\nb.py"], end_tree="abc1234", run_branch=None)
     assert ":(top,literal)" not in text and "typed as the listing spells it" in text
     assert not [line for line in text.splitlines() if line.startswith("[agent6]")]
 

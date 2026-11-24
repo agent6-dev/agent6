@@ -13,7 +13,7 @@ import subprocess
 
 import pytest
 
-from agent6.app import confine  # pyright: ignore[reportPrivateUsage]
+from agent6.app import confine
 from agent6.config import Config
 from agent6.sandbox import jail
 from agent6.tools import policy as tools_policy

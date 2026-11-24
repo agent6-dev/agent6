@@ -55,7 +55,7 @@ def test_skill_state_writes_preserve_config_symlinks(
 ) -> None:
     """Skill state changes write through the config link into the dotfiles target."""
     _write_skill_file(_installed(env, "tidy") / "SKILL.md", "tidy")
-    target = cli_skills_cmds._state_target(repo)  # pyright: ignore[reportPrivateUsage]
+    target = cli_skills_cmds._state_target(repo)
     target.parent.mkdir(parents=True, exist_ok=True)
     real = env / "dotfiles.toml"
     real.write_text('[skills.state]\ntidy = "disabled"\n', encoding="utf-8")
@@ -379,7 +379,7 @@ class TestRemoveListComplete:
 class TestSkillsTaskPrefix:
     def test_prefix_contains_skill_and_unknown_errors(self, env: pathlib.Path) -> None:
         from agent6.config import layer
-        from agent6.ui.cli import run  # pyright: ignore[reportPrivateUsage]
+        from agent6.ui.cli import run
 
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
         assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
@@ -401,7 +401,7 @@ class TestSkillsTaskPrefix:
         printed the installed set with nothing saying no run would load any of it.
         """
         from agent6.config import layer
-        from agent6.ui.cli import run  # pyright: ignore[reportPrivateUsage]
+        from agent6.ui.cli import run
 
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
         assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
@@ -632,11 +632,11 @@ def test_the_skill_fetch_clock_starts_with_the_body(monkeypatch: pytest.MonkeyPa
 
     @contextlib.contextmanager
     def slow_open(*_a: object, **_k: object) -> Generator[_Body]:
-        clock[0] += skills_cmds._FETCH_TIMEOUT_S + 1  # pyright: ignore[reportPrivateUsage]
+        clock[0] += skills_cmds._FETCH_TIMEOUT_S + 1
         yield _Body()
 
     monkeypatch.setattr(skills_cmds.httpx2, "stream", slow_open)
-    assert skills_cmds._fetch_url("https://example.invalid/SKILL.md") == "# skill\n"  # pyright: ignore[reportPrivateUsage]
+    assert skills_cmds._fetch_url("https://example.invalid/SKILL.md") == "# skill\n"
 
 
 def test_a_config_defect_reaches_the_crash_path_and_an_unreadable_config_degrades(

@@ -151,7 +151,7 @@ def test_streamed_deltas_carry_the_call_identity(tmp_path: pathlib.Path) -> None
 
     logs = tmp_path / "logs.jsonl"
     wrapper = role_providers.InstrumentedProvider(
-        inner=_Streaming(),  # pyright: ignore[reportArgumentType]
+        inner=_Streaming(),
         actor="reviewer:security",
         model="m",
         provider_name="p",

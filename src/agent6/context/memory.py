@@ -146,7 +146,7 @@ def _touch(value: Any) -> Touch | None:
     """Return a `{"session", "at"}` object as a Touch, or None when it is not one."""
     if not isinstance(value, dict):
         return None
-    session, at = value.get("session"), value.get("at")  # pyright: ignore[reportUnknownMemberType]
+    session, at = value.get("session"), value.get("at")
     if not isinstance(session, str) or not session or not isinstance(at, str) or not at:
         return None
     return Touch(session, at)

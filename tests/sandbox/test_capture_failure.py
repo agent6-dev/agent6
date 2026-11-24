@@ -67,8 +67,8 @@ def test_launcher_capture_failure_is_visible_before_stop(
         assert (shells.log_root / view.id / "out.log").read_bytes() == b"x" * 1024
         assert running.state == "running" and running.returncode is None
         assert "output incomplete" in output and "File too large" in output
-        shell = shells._get(view.id)  # pyright: ignore[reportPrivateUsage]
-        status = session.status_background(shell.job._handle)  # pyright: ignore[reportPrivateUsage]
+        shell = shells._get(view.id)
+        status = session.status_background(shell.job._handle)
         assert status.running and "File too large" in status.capture_error
         if observe_exit:
             (work / "release").touch()
@@ -79,7 +79,7 @@ def test_launcher_capture_failure_is_visible_before_stop(
             replay = session_shells.roster_from_dir(tmp_path / "shells")
             assert "exited 0" in replay[0] and "File too large" in replay[0]
         if lose_worker:
-            pid = session._proc.pid  # pyright: ignore[reportPrivateUsage]
+            pid = session._proc.pid
             worker = int(pathlib.Path(f"/proc/{pid}/task/{pid}/children").read_text())
             os.kill(worker, signal.SIGKILL)
             reason = "job outcome or cleanup unknown"
@@ -87,8 +87,8 @@ def test_launcher_capture_failure_is_visible_before_stop(
             if observe_exit:
                 stopped = shells.stop(view.id)
                 assert stopped.returncode == 0 and stopped.state != "stop failed"
-            session._proc.kill()  # pyright: ignore[reportPrivateUsage]
-            session._proc.wait(timeout=5)  # pyright: ignore[reportPrivateUsage]
+            session._proc.kill()
+            session._proc.wait(timeout=5)
             reason = "jail session protocol failed"
         lost, output = shells.read(view.id, tail_lines=10)
         code = 0 if observe_exit else None

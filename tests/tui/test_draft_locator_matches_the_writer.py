@@ -16,7 +16,7 @@ import pathlib
 from agent6 import kinds
 from agent6.app.machine import create as create_mod
 from agent6.sessions import layout
-from agent6.ui.tui import machines  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.tui import machines
 
 
 def test_the_locator_reads_the_directory_the_writer_writes(tmp_path: pathlib.Path) -> None:

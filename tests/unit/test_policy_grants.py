@@ -49,7 +49,7 @@ def test_a_session_or_absent_network_grants_no_host_network_file(tmp_path: pathl
     """The resolver and trust-store grants follow the host network only."""
     reads = set(policy.host_network_reads())
     for network in ("session", "none"):
-        built = policy.jail_policy(tmp_path, Config(), "full", ("true",), network=network)  # pyright: ignore[reportArgumentType]
+        built = policy.jail_policy(tmp_path, Config(), "full", ("true",), network=network)
         assert built.network == network
         assert not reads & set(built.extra_ro_paths)
 

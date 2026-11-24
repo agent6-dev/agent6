@@ -24,7 +24,7 @@ def _end(notify: NotifyConfig, tmp_path: pathlib.Path, **over: object) -> None:
         note=reporter.STDIO_REPORTER.note,
     )
     fields.update(over)
-    notify_hook.session_end(notify, **fields)  # pyright: ignore[reportArgumentType]
+    notify_hook.session_end(notify, **fields)  # pyrefly: ignore[bad-argument-type]
 
 
 def test_notify_noop_when_unconfigured(tmp_path: pathlib.Path) -> None:

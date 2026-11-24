@@ -23,13 +23,13 @@ def _connection(
     saved = review_helpers.reviewed_session(cwd)
     current = session.Session(acp_id="editor", cwd=cwd, session_id=saved.session_id)
     sessions = session.Sessions(run=run, state_dir_for=paths.state_dir)
-    sessions._by_id[current.acp_id] = current  # pyright: ignore[reportPrivateUsage]
+    sessions._by_id[current.acp_id] = current
     out = io.BytesIO()
     return server.ACPServer(io.BytesIO(), out, sessions=sessions), current, out
 
 
 def _prompt(connection: server.ACPServer, current: session.Session, command: str) -> None:
-    connection._handle(  # pyright: ignore[reportPrivateUsage]
+    connection._handle(
         json.dumps(
             dict(
                 jsonrpc="2.0",

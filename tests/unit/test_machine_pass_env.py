@@ -15,7 +15,7 @@ import pytest
 from agent6.app.machine import StateConfig, machine_pass_env_refusal, run
 from agent6.config import Config
 from agent6.machine import MachineError, ToolState, load_machine
-from agent6.ui.cli import machine_check  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import machine_check
 
 MACHINE = """
 machine = "secretdemo"

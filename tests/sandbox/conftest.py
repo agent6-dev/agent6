@@ -189,7 +189,7 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
     finally:
         dispatcher.close()
     assert not session.close()
-    assert session._proc.poll() == 0  # pyright: ignore[reportPrivateUsage]
+    assert session._proc.poll() == 0
     view = receipt.read_receipt(saved.session_dir, target.host_root)
     assert not view.evidence_notes
     assert view.execution_id == dispatcher.execution_id

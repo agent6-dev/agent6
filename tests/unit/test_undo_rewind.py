@@ -751,7 +751,7 @@ def test_a_failed_rewind_still_journals_the_undone_end(
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
-    def _fails(*_a: object, **_k: object) -> undo._Rewound:  # pyright: ignore[reportPrivateUsage]
+    def _fails(*_a: object, **_k: object) -> undo._Rewound:
         raise errors.GitError("restore refused")
 
     monkeypatch.setattr(undo, "_rewind_checkout", _fails)

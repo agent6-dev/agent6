@@ -81,7 +81,7 @@ class Fake:
         return [json.loads(line) for line in self.log.read_text().splitlines()]
 
     def options(self, **over: object) -> container.ContainerOptions:
-        return container.ContainerOptions(runtime=(str(self.runtime),), **over)  # pyright: ignore[reportArgumentType]
+        return container.ContainerOptions(runtime=(str(self.runtime),), **over)  # pyrefly: ignore[bad-argument-type]
 
 
 @pytest.fixture

@@ -305,7 +305,7 @@ def test_the_scratch_repository_is_out_of_a_jailed_commands_reach(
     def spy(*args: object, **kwargs: object) -> object:
         env = kwargs.get("env")
         if isinstance(env, dict) and "GIT_DIR" in env:
-            scratches.add(pathlib.Path(env["GIT_DIR"]))  # pyright: ignore[reportUnknownArgumentType]
+            scratches.add(pathlib.Path(env["GIT_DIR"]))
         return real(*args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(git_command.subprocess, "Popen", spy)

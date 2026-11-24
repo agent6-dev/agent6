@@ -277,7 +277,7 @@ def test_failed_init_hands_new_scaffold_back_to_the_sudo_user(
     monkeypatch.setattr(paths, "chown_to_real_user", handed_back.append)
 
     with pytest.raises(errors.OperatorError):
-        ic._cmd_init(ecosystem="", assume_yes=True)  # pyright: ignore[reportPrivateUsage]
+        ic._cmd_init(ecosystem="", assume_yes=True)
 
     assert handed_back == [target.parent, tmp_path / "AGENTS.md", tmp_path / ".gitignore"]
 

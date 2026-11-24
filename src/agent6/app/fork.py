@@ -131,7 +131,7 @@ def _read_journal(src: layout.SessionLayout) -> list[dict[str, Any]]:
         except ValueError:
             continue
         if isinstance(entry, dict):
-            out.append(entry)  # pyright: ignore[reportUnknownArgumentType]
+            out.append(entry)
     return out
 
 

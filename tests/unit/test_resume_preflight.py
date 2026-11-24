@@ -26,7 +26,7 @@ from agent6.harness import loop_snapshot
 from agent6.sandbox import detect
 from agent6.sessions import event_log, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.cli import resume as cli_resume  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import resume as cli_resume
 from agent6.ui.cli import run as cli_run
 from agent6.vcs.git import read as git_read
 from tests.unit import test_operator_images

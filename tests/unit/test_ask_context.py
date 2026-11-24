@@ -229,7 +229,7 @@ def test_load_repo_summary_outside_git(tmp_path: pathlib.Path) -> None:
 def test_system_prompt_names_non_git_directory(tmp_path: pathlib.Path) -> None:
     from agent6 import kinds
     from agent6.config import load_config
-    from agent6.harness import prompt_blocks  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness import prompt_blocks
 
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(

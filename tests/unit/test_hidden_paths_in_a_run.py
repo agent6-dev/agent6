@@ -58,7 +58,7 @@ def _in_store(root: pathlib.Path, content: str) -> bool:
     )
 
 
-def _command(id_: str, script: str) -> lifecycle._Step:  # pyright: ignore[reportPrivateUsage]
+def _command(id_: str, script: str) -> lifecycle._Step:
     tool = {
         "type": "tool_use",
         "id": id_,
@@ -92,14 +92,14 @@ def _setup(
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "seed")
     monkeypatch.chdir(repo)
-    monkeypatch.setattr(session_runtime, "select_isolation", lifecycle._none_isolation)  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(session_runtime, "select_isolation", lifecycle._none_isolation)
     return repo
 
 
 def _run(monkeypatch: pytest.MonkeyPatch, session_id: str, steps: list[Any]) -> int:
     monkeypatch.setattr(
         role_providers, "build_role_provider", lifecycle._use(lifecycle._Scripted(steps))
-    )  # pyright: ignore[reportPrivateUsage]
+    )
     return cli_main(["run", "--session-id", session_id, "task"])
 
 
@@ -122,7 +122,7 @@ def test_a_hidden_file_a_command_writes_reaches_no_commit_and_no_object(
                 "c1", "printf 'TOKEN=abc\\n' > .env; printf 'NEW-SECRET-7777\\n' > secrets/key.txt"
             ),
             ("", (edit,)),
-            lifecycle._finish(),  # pyright: ignore[reportPrivateUsage]
+            lifecycle._finish(),
         ],
     )
     assert rc == 0
@@ -142,7 +142,7 @@ def test_a_run_whose_only_write_is_a_hidden_file_is_not_stranded(
     rc = _run(
         monkeypatch,
         "hidden-RUN002",
-        [_command("c1", "printf 'TOKEN=abc\\n' > .env"), lifecycle._finish()],  # pyright: ignore[reportPrivateUsage]
+        [_command("c1", "printf 'TOKEN=abc\\n' > .env"), lifecycle._finish()],
     )
     out = capsys.readouterr().out
     assert rc == 0, out
@@ -156,7 +156,7 @@ def test_a_pre_run_stash_leaves_a_hidden_tracked_files_change_in_place(
     repo = _setup(tmp_path, monkeypatch, hide=("secrets",), dirty="stash")
     (repo / "secrets" / "key.txt").write_text("OPERATOR-UNCOMMITTED-SECRET\n", encoding="utf-8")
     (repo / "a.py").write_text("x = 9\n", encoding="utf-8")
-    assert _run(monkeypatch, "hidden-RUN003", [lifecycle._finish()]) == 0  # pyright: ignore[reportPrivateUsage]
+    assert _run(monkeypatch, "hidden-RUN003", [lifecycle._finish()]) == 0
     assert (repo / "secrets" / "key.txt").read_text(
         encoding="utf-8"
     ) == "OPERATOR-UNCOMMITTED-SECRET\n"

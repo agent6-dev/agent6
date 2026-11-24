@@ -289,13 +289,13 @@ def test_run_from_a_plan_with_every_question_answered_prints_no_warning(
 
 def test_unanswered_questions_are_the_ones_with_no_answer_text() -> None:
     """A question is unanswered when its `**A:**` line is blank, or missing, with no text below."""
-    assert entry._unanswered_questions(_PLAN_WITH_QUESTIONS) == [  # pyright: ignore[reportPrivateUsage]
+    assert entry._unanswered_questions(_PLAN_WITH_QUESTIONS) == [
         "Should we add a max-size limit or TTL eviction policy?"
     ]
-    assert entry._unanswered_questions(  # pyright: ignore[reportPrivateUsage]
+    assert entry._unanswered_questions(
         "## Open questions\n> **Q:** one?\n> **Q:** two?\n> **A:**\n\n## Verification\nrun it\n"
     ) == ["one?", "two?"]
-    assert entry._unanswered_questions("# Plan: x\n\n1. step\n") == []  # pyright: ignore[reportPrivateUsage]
+    assert entry._unanswered_questions("# Plan: x\n\n1. step\n") == []
 
 
 def test_run_from_a_run_with_no_task_names_what_it_needs(

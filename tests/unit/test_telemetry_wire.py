@@ -15,19 +15,19 @@ import pathlib
 import pytest
 
 from agent6 import __version__
-from agent6.ui.telemetry import otlp, prometheus  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.telemetry import otlp, prometheus
 from agent6.viewmodel import telemetry, telemetry_metrics, telemetry_records
 from tests.unit import test_telemetry_fold as fold_tests
 from tests.unit import test_telemetry_machine as machine_tests
 
 _GOLDEN = pathlib.Path(__file__).parent / "data" / "golden_telemetry_wire.json"
 _RESOURCE: telemetry_records.Attributes = (("service.name", "agent6"), ("agent6.repo", "0123abcd"))
-_START = telemetry_records.event_ns(fold_tests._ts(0))  # pyright: ignore[reportPrivateUsage]
-_NOW = telemetry_records.event_ns(fold_tests._ts(60))  # pyright: ignore[reportPrivateUsage]
+_START = telemetry_records.event_ns(fold_tests._ts(0))
+_NOW = telemetry_records.event_ns(fold_tests._ts(60))
 
 
 def _bodies() -> dict[str, object]:
-    fold, spans, logs = fold_tests._run(fold_tests._journal())  # pyright: ignore[reportPrivateUsage]
+    fold, spans, logs = fold_tests._run(fold_tests._journal())
     machine, machine_spans, machine_logs = machine_tests.folded()
     state = machine_spans[3]
     worker = telemetry.TelemetryFold(
@@ -146,7 +146,7 @@ def test_a_non_finite_value_is_refused_not_serialized() -> None:
 
 def test_the_prometheus_exposition_follows_the_text_format() -> None:
     """HELP and TYPE per metric, escaped labels, cumulative buckets up to +Inf, no timestamps."""
-    fold, _spans, _logs = fold_tests._run(fold_tests._journal())  # pyright: ignore[reportPrivateUsage]
+    fold, _spans, _logs = fold_tests._run(fold_tests._journal())
     text = prometheus.exposition(fold.metrics())
     lines = text.splitlines()
     assert lines[0] == "# HELP agent6_sessions_total Sessions whose journal was read."

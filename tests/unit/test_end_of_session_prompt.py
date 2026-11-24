@@ -77,7 +77,7 @@ def test_follow_up_executions_run_under_the_invocations_flags(
     answers = iter(["and a test", "/exit"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
     args = _run_args(max_usd=0.10, auto_approve=True)
-    assert entry._prompt_for_the_next_input(args, 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
+    assert entry._prompt_for_the_next_input(args, 0, layout.session_id) == 0
     (execution,) = seen
     assert execution["steer"] == "and a test"
     assert execution["budget_overrides"] == session_setup.BudgetOverrides.from_args(args)
@@ -210,7 +210,7 @@ def test_a_refused_runs_discarded_id_ends_quietly(
     """A refusal discards its husk, and the follow-up prompt ends with the refusal's exit code."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("agent6.ui.cli.session_prompt.prompting_is_possible", lambda: True)
-    assert entry._prompt_for_the_next_input(_run_args(), 2, "gone-run-QQQQQQ") == 2  # pyright: ignore[reportPrivateUsage]
+    assert entry._prompt_for_the_next_input(_run_args(), 2, "gone-run-QQQQQQ") == 2
 
 
 @pytest.mark.parametrize(("mode", "asks"), [("run", True), ("plan", True), ("ask", False)])
@@ -240,7 +240,7 @@ def test_a_resumed_execution_ends_by_asking_like_a_fresh_one(
 
     monkeypatch.setattr("agent6.ui.cli.session_prompt.end_of_session_prompt", spy)
     args = _run_args(session_id="resumed-run", force=False, tui=False, preset="", steer="")
-    assert entry._dispatch_resume(args) == 0  # pyright: ignore[reportPrivateUsage]
+    assert entry._dispatch_resume(args) == 0
     assert asked == (["resumed-run-AAAAAA"] if asks else [])
 
 
@@ -266,7 +266,7 @@ def test_resume_prompt_stays_on_the_session_selected_at_dispatch(
 
     monkeypatch.setattr("agent6.ui.cli.session_prompt.end_of_session_prompt", spy)
     args = _run_args(session_id=target, force=False, tui=False, preset="", steer="")
-    assert entry._dispatch_resume(args) == 0  # pyright: ignore[reportPrivateUsage]
+    assert entry._dispatch_resume(args) == 0
     assert prompted == [selected.session_id]
 
 
@@ -307,9 +307,9 @@ def test_a_refused_execution_does_not_prompt_on_an_existing_session(
     )
     plan_args = _run_args(**common, plan_command="run", task="new plan")
     resume_args = _run_args(**common, interactive=False, force=False, steer="")
-    assert entry._dispatch_run(run_args) == 2  # pyright: ignore[reportPrivateUsage]
-    assert entry._dispatch_plan(plan_args) == 2  # pyright: ignore[reportPrivateUsage]
-    assert entry._dispatch_resume(resume_args) == 2  # pyright: ignore[reportPrivateUsage]
+    assert entry._dispatch_run(run_args) == 2
+    assert entry._dispatch_plan(plan_args) == 2
+    assert entry._dispatch_resume(resume_args) == 2
 
 
 def test_a_execution_that_undoes_or_detaches_ends_the_asking(
@@ -357,7 +357,7 @@ def test_a_detached_run_is_not_followed_by_the_prompt(
 
     monkeypatch.setattr("agent6.ui.cli.session_prompt.end_of_session_prompt", _must_not_prompt)
     args = _run_args()
-    assert entry._prompt_for_the_next_input(args, 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
+    assert entry._prompt_for_the_next_input(args, 0, layout.session_id) == 0
 
 
 def test_a_parked_start_is_not_followed_by_the_prompt(
@@ -388,7 +388,7 @@ def test_a_parked_start_is_not_followed_by_the_prompt(
         return 0
 
     monkeypatch.setattr("agent6.ui.cli.session_prompt.end_of_session_prompt", spy)
-    assert entry._prompt_for_the_next_input(_run_args(), 2, layout.session_id) == 2  # pyright: ignore[reportPrivateUsage]
+    assert entry._prompt_for_the_next_input(_run_args(), 2, layout.session_id) == 2
     assert asked == []
 
 
@@ -409,7 +409,7 @@ def test_an_undone_run_is_not_followed_by_the_prompt(
         return 0
 
     monkeypatch.setattr("agent6.ui.cli.session_prompt.end_of_session_prompt", spy)
-    assert entry._prompt_for_the_next_input(_run_args(), 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
+    assert entry._prompt_for_the_next_input(_run_args(), 0, layout.session_id) == 0
     assert asked == []
 
 
@@ -459,9 +459,9 @@ def test_i_with_tui_is_refused_before_a_execution_starts(
         pins=[],
         decompose=False,
     )
-    assert entry._dispatch_run(run_args) == 2  # pyright: ignore[reportPrivateUsage]
+    assert entry._dispatch_run(run_args) == 2
     resume_args = _run_args(interactive=True, tui=True, session_id="runny-one-AAAAAA", steer="")
-    assert entry._dispatch_resume(resume_args) == 2  # pyright: ignore[reportPrivateUsage]
+    assert entry._dispatch_resume(resume_args) == 2
     err = capsys.readouterr().err
     assert err.count("-i cannot combine with --tui") == 2
 

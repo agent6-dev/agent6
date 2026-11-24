@@ -295,9 +295,9 @@ def test_watch_screen_does_not_reannounce_a_stale_end(
                 await pilot.pause()
             screen = app.screen
             assert isinstance(screen, machmod.MachineWatchScreen)
-            assert screen._end_notified is True  # pyright: ignore[reportPrivateUsage]
+            assert screen._end_notified is True
             assert fired == []  # no desktop notification for the day-old end
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [str(n.message) for n in app._notifications]
             assert not any(m == "ok" or m.endswith(" ok") for m in notes), notes
 
     asyncio.run(scenario())
@@ -333,7 +333,7 @@ def test_watch_screen_disables_steer_and_message_when_ended(
                 await pilot.pause()
             screen = app.screen
             assert isinstance(screen, machmod.MachineWatchScreen)
-            assert screen._ended  # pyright: ignore[reportPrivateUsage]
+            assert screen._ended
             assert screen.check_action("steer", ()) is None
             assert screen.check_action("poke", ()) is None
             screen.action_steer()  # no-op when ended
@@ -341,7 +341,7 @@ def test_watch_screen_disables_steer_and_message_when_ended(
             assert not (state / "steer.request").exists()  # nothing dropped in the dead dir
             screen.action_poke()  # a direct call: the action itself answers
             await pilot.pause()
-            toasts = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            toasts = [(str(n.message), n.severity) for n in app._notifications]
             # The CLI's refusal, word for word.
             assert (
                 machine_state.machine_verb_refusal(instance, "tiny", "poke"),
@@ -381,7 +381,7 @@ def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
                 await pilot.pause()
             screen = app.screen
             assert isinstance(screen, machmod.MachineWatchScreen)
-            assert screen._ended  # pyright: ignore[reportPrivateUsage]
+            assert screen._ended
             log = screen.query_one("#mw-log", widgets.RichLog)
             assert not any("effort" in strip.text for strip in log.lines)
 
@@ -423,7 +423,7 @@ def test_create_opens_dashboard_on_the_draft(tmp_path: pathlib.Path, monkeypatch
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, machmod.MachinesScreen)
-            screen._on_create("make a greeter")  # pyright: ignore[reportPrivateUsage]
+            screen._on_create("make a greeter")
             await _spawn_settled(app)
             await pilot.pause()
         assert app.return_value == draft  # handed the draft to the dashboard
@@ -459,7 +459,7 @@ def test_create_spawns_off_the_ui_thread(tmp_path: pathlib.Path, monkeypatch: ob
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, machmod.MachinesScreen)
-            screen._on_create("make a greeter")  # pyright: ignore[reportPrivateUsage]
+            screen._on_create("make a greeter")
             await pilot.pause()  # the worker starts from the loop
             assert entered.wait(2.0), "the spawn never ran"
             # The loop runs this line while the locate blocks on another thread.
@@ -585,7 +585,7 @@ def test_machine_run_refusal_notifies_and_skips_watch(
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert not isinstance(app.screen, machmod.MachineWatchScreen)  # no watch on nothing
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [str(n.message) for n in app._notifications]
             assert any("lock held" in n for n in notes)
 
     asyncio.run(scenario())
@@ -666,7 +666,7 @@ def test_watch_screen_tolerates_torn_utf8_state_log(tmp_path: pathlib.Path) -> N
                 fh.write(raw[cut:] + b"\n")
             for _ in range(4):
                 await pilot.pause()
-            screen._poll()  # pyright: ignore[reportPrivateUsage]
+            screen._poll()
             await pilot.pause()
             assert any("café" in line.text for line in log.lines)
 
@@ -737,13 +737,13 @@ def test_watch_screen_refuses_a_steer_no_state_would_read(
                 await pilot.pause()
             screen = app.screen
             assert isinstance(screen, machmod.MachineWatchScreen)
-            assert not screen._ended  # pyright: ignore[reportPrivateUsage]
+            assert not screen._ended
             assert screen.check_action("steer", ()) is None
             screen.action_steer()
             await pilot.pause()
             assert not (state / "steer.request").exists()
             # A refusal is a warning, not a success-coloured toast.
-            notes = app._notifications  # pyright: ignore[reportPrivateUsage]
+            notes = app._notifications
             assert [n.severity for n in notes] == ["warning"]
 
     asyncio.run(scenario())
@@ -1005,7 +1005,7 @@ def test_a_create_whose_screen_was_left_still_opens_its_draft(
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, machmod.MachinesScreen)
-            screen._on_create("make a greeter")  # pyright: ignore[reportPrivateUsage]
+            screen._on_create("make a greeter")
             await pilot.pause()
             assert entered.wait(2.0), "the spawn never ran"
             app.pop_screen()  # Esc while the create is still locating
@@ -1045,7 +1045,7 @@ def test_a_run_whose_screen_was_left_still_opens_its_watch(
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, machmod.MachinesScreen)
-            screen._on_run_confirm(path)(True)  # pyright: ignore[reportPrivateUsage]
+            screen._on_run_confirm(path)(True)
             await pilot.pause()
             assert entered.wait(2.0), "the spawn never ran"
             app.pop_screen()  # Esc while the run is still starting
@@ -1084,7 +1084,7 @@ def test_watch_screen_stop_on_a_parked_machine_says_why(
             await pilot.pause()
             await pilot.press("x")
             await pilot.pause()
-            toasts = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            toasts = [(str(n.message), n.severity) for n in app._notifications]
             # Nothing to stop is the note, not a warning: the CLI's answer.
             assert any("not running" in m and s == "information" for m, s in toasts), toasts
             assert not (instance / "stop").exists()
@@ -1199,12 +1199,7 @@ reason = "done"
             for _ in range(14):
                 await pilot.pause(0.25)
             log = app.screen.query_one("#mw-log", widgets.RichLog)
-            out.append(
-                "\n".join(
-                    "".join(seg.text for seg in line._segments)  # pyright: ignore[reportPrivateUsage]
-                    for line in log.lines
-                )
-            )
+            out.append("\n".join("".join(seg.text for seg in line._segments) for line in log.lines))
 
     asyncio.run(scenario())
     assert out[0].count("thinking…") == 1, out[0]
@@ -1242,7 +1237,7 @@ def test_watch_footer_keeps_every_machine_verb_visible_and_gates_it(tmp_path: pa
             # A click on a dimmed key shows the refusal the key shows, not only the bell.
             await pilot.click(keys["Steer"])
             await pilot.pause()
-            notes = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [(str(n.message), n.severity) for n in app._notifications]
             assert (
                 machine_state.machine_verb_refusal(instance, "tiny", "steer"),
                 "warning",
@@ -1280,7 +1275,7 @@ def test_watch_footer_refreshes_when_only_poke_availability_changes(tmp_path: pa
             journal.clear_pending_wait()
             screen = app.screen
             assert isinstance(screen, machmod.MachineWatchScreen)
-            screen._poll()  # pyright: ignore[reportPrivateUsage]
+            screen._poll()
             await pilot.pause()
             message = next(k for k in app.screen.query(FooterKey) if k.description == "Message")
             assert message.has_class("-disabled")
@@ -1330,7 +1325,7 @@ def test_a_steer_refused_while_its_modal_is_open_writes_nothing(tmp_path: pathli
             await pilot.press("ctrl+s")
             await pilot.pause()
             assert not (state / "steer.answer").exists()
-            notes = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [(str(n.message), n.severity) for n in app._notifications]
             assert (refusal, "warning") in notes
 
     asyncio.run(scenario())
@@ -1370,7 +1365,7 @@ def test_a_poke_refused_while_its_modal_is_open_writes_nothing(tmp_path: pathlib
             await pilot.press("enter")
             await pilot.pause()
             assert not journal.signal_path.exists()
-            notes = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [(str(n.message), n.severity) for n in app._notifications]
             assert (refusal, "warning") in notes
 
     asyncio.run(scenario())
@@ -1397,12 +1392,12 @@ def test_an_answer_submitted_after_the_worker_died_writes_nothing(tmp_path: path
             await waits.wait_for(pilot, lambda: waits.answerable(screen), "the approval row")
             await waits.focus_answers(screen, pilot)
             # The next poll would withdraw the dead machine's row; the answer lands first.
-            screen._poll_timer.pause()  # pyright: ignore[reportPrivateUsage]
+            screen._poll_timer.pause()
             (instance / "worker.pid").write_text("999999999", encoding="utf-8")  # dies
             await pilot.press("y")
             await pilot.pause()
             assert not (state / "approvals").exists()
-            notes = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [(str(n.message), n.severity) for n in app._notifications]
             assert (machmod._ANSWER_LOST, "warning") in notes
 
     asyncio.run(scenario())
@@ -1432,11 +1427,11 @@ def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: pathl
 
     def counting_fold(*args: object, **kwargs: object) -> object:
         counts["fold"] += 1
-        return real_fold(*args, **kwargs)  # pyright: ignore[reportArgumentType]
+        return real_fold(*args, **kwargs)  # pyrefly: ignore[bad-argument-type]
 
     def counting_execution(*args: object, **kwargs: object) -> object:
         counts["execution"] += 1
-        return real_execution(*args, **kwargs)  # pyright: ignore[reportArgumentType]
+        return real_execution(*args, **kwargs)  # pyrefly: ignore[bad-argument-type]
 
     class _Host(textual_app.App[None]):
         def on_mount(self) -> None:
@@ -1452,7 +1447,7 @@ def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: pathl
             vm_mod.fold_machine = counting_fold  # type: ignore[assignment]
             machine_logs.newest_agent_execution = counting_execution  # type: ignore[assignment]
             try:
-                screen._poll()  # pyright: ignore[reportPrivateUsage]
+                screen._poll()
             finally:
                 machines.fold_machine = real_fold
                 vm_mod.fold_machine = real_fold
@@ -1502,10 +1497,10 @@ def test_a_click_on_a_stale_lit_verb_explains_itself_once(tmp_path: pathlib.Path
                     break
             stop = next(k for k in screen.query(FooterKey) if k.description == "Stop")
             assert not stop.has_class("-disabled"), "the blurred footer keeps its paint"
-            app._notifications.clear()  # pyright: ignore[reportPrivateUsage]
+            app._notifications.clear()
             await pilot.click(stop)
             await pilot.pause()
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            notes = [str(n.message) for n in app._notifications]
             assert notes == [machine_state.machine_verb_refusal(instance, "tiny", "stop")]
 
     asyncio.run(scenario())

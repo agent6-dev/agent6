@@ -93,16 +93,14 @@ def _dispatch_edit(
     )
     dispatcher.dispatch.return_value = result
     events = _Events()
-    wf = test_harness._wf(  # pyright: ignore[reportPrivateUsage]
-        repo, mode="run", dispatcher=dispatcher, events=events
-    )
+    wf = test_harness._wf(repo, mode="run", dispatcher=dispatcher, events=events)
     wf.chain = run_chain.RunChain(
         repo, ref="refs/agent6/t/head", fallback_parent="HEAD", untracked_at_start=untracked
     )
     wf.state_dir = state_dir
     turn = loop_state.TurnState(
         number=3,
-        resp=test_harness._resp(""),  # pyright: ignore[reportPrivateUsage]
+        resp=test_harness._resp(""),
         assistant=loop_conversation.AssistantMessage(
             raw_content=(),
             tool_uses=(
@@ -110,8 +108,8 @@ def _dispatch_edit(
             ),
         ),
     )
-    wf._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
-        test_harness._state(),  # pyright: ignore[reportPrivateUsage]
+    wf._turn_dispatch_tools(
+        test_harness._state(),
         turn,
         turn_context(),
     )

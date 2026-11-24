@@ -101,7 +101,7 @@ def test_quit_from_menu_exits_home() -> None:
             await pilot.press("enter")
             await pilot.pause()
             await pilot.pause()
-            assert app._running is False  # pyright: ignore[reportPrivateUsage]
+            assert app._running is False
 
     asyncio.run(scenario())
 
@@ -138,7 +138,7 @@ def test_q_key_quits_home() -> None:
             await pilot.pause()
             await pilot.press("q")
             await pilot.pause()
-            assert app._running is False  # pyright: ignore[reportPrivateUsage]
+            assert app._running is False
 
     asyncio.run(scenario())
 

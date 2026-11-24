@@ -21,7 +21,7 @@ from agent6.config import Config
 from agent6.harness import toolset
 from agent6.sessions import ipc
 from agent6.tools import dispatch, mcp_client, operator_prompts, schema, tool_errors
-from tests.unit.test_mcp_client import _fake_server_argv  # pyright: ignore[reportPrivateUsage]
+from tests.unit.test_mcp_client import _fake_server_argv
 
 Mode = Literal["run", "plan", "ask", "machine", "read_only", "reviewer"]
 

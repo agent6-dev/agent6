@@ -56,7 +56,7 @@ def test_on_refuses_where_it_cannot_be_honoured(isolation: str) -> None:
     same: nothing depends on which layer the word came from.
     """
     on = Config.model_validate({"sandbox": {"protect_git": "on"}})
-    message = confine.check_protect_git_support(on, isolation)  # pyright: ignore[reportArgumentType]
+    message = confine.check_protect_git_support(on, isolation)  # pyrefly: ignore[bad-argument-type]
     assert message is not None
     assert "requires sandbox.isolation = 'full'" in message
     assert "sandbox.protect_git = 'auto'" in message  # names the fix

@@ -153,7 +153,7 @@ def _configured_context(
         logger=lambda _line: None,
         mode="run",
     )
-    ctx = wf._turn_context(state, turn=1, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=1, execution_start=1)
     return dataclasses.replace(ctx, tree_sha=lambda: "tree")
 
 
@@ -225,7 +225,7 @@ def test_only_the_returned_command_handle_holds_the_settled_streak(
     state.settled = guards.SettledGuard(tree="tree")
     ctx = dataclasses.replace(
         wf._turn_context(state, turn=1, execution_start=1), tree_sha=lambda: "tree"
-    )  # pyright: ignore[reportPrivateUsage]
+    )
     outcome = results.ExecResult(
         returncode=returncode,
         stdout="",

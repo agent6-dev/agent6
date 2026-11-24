@@ -30,7 +30,7 @@ def _run(
 
     The hand-off shape is exercised in test_jail_session_levels.py.
     """
-    res = session.run(argv, **kw)  # pyright: ignore[reportArgumentType]
+    res = session.run(argv, **kw)  # pyrefly: ignore[bad-argument-type]
     assert isinstance(res, kinds.CommandResult), f"unexpected hand-off: {res}"
     return res
 
@@ -196,7 +196,7 @@ def test_a_dead_session_refuses_with_its_own_error(tmp_path: pathlib.Path) -> No
     import signal
 
     session = _session(tmp_path)
-    proc = session._proc  # pyright: ignore[reportPrivateUsage]
+    proc = session._proc
     try:
         with contextlib.suppress(ProcessLookupError):
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)

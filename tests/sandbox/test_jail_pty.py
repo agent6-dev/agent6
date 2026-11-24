@@ -36,7 +36,7 @@ def _run(tmp_path: pathlib.Path, level: str, script: str) -> str:
         policy.jail_policy(
             tmp_path,
             Config(),
-            level,  # pyright: ignore[reportArgumentType]
+            level,  # pyrefly: ignore[bad-argument-type]
             ("python3", "-c", script),
             network="none",
         )

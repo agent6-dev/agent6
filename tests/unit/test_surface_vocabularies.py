@@ -17,8 +17,8 @@ from __future__ import annotations
 import re
 from typing import get_args
 
-from agent6.ui.cli import console_render  # pyright: ignore[reportPrivateUsage]
-from agent6.ui.tui import conversation  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import console_render
+from agent6.ui.tui import conversation
 from agent6.ui.web import page
 from agent6.viewmodel import transcript_style
 
@@ -54,7 +54,7 @@ def test_every_status_level_reaches_every_surface() -> None:
 
     `neutral` is plain by design, so it carries no pill.
     """
-    from agent6.ui.cli import common  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import common
     from agent6.ui.tui import theme
     from agent6.viewmodel import format
 

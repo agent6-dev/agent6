@@ -964,7 +964,7 @@ def test_the_hub_row_and_the_cli_json_row_are_one_shape(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The hub and CLI share the journal task and its display clipping."""
-    from agent6.ui.cli import sessions_list  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import sessions_list
 
     monkeypatch.chdir(tmp_path)
     task = "a task whose full text must survive both JSON surfaces\n" + "x" * 5000
@@ -1000,7 +1000,7 @@ def test_the_hub_row_carries_the_one_line_task_the_cli_table_shows(
 def test_the_draft_hub_row_keeps_the_cli_json_task(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import sessions_list  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import sessions_list
 
     monkeypatch.chdir(tmp_path)
     task = "author a machine from this complete description " + "y" * 100
@@ -1025,7 +1025,7 @@ def test_a_waiting_machine_is_not_labelled_failed(tmp_path: pathlib.Path) -> Non
     """
     from agent6.viewmodel.machine import state as machine_state
 
-    row = model._machine_row(  # pyright: ignore[reportPrivateUsage]
+    row = model._machine_row(
         machine_state.MachineSummary(
             name="inst",
             machine="m",

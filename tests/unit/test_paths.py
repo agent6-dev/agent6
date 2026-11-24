@@ -266,7 +266,7 @@ def test_a_chown_never_resolves_a_symlink_swapped_in_mid_walk(
 
     def _fake_chown(target: object, _uid: int, _gid: int, **kw: object) -> None:
         assert kw.get("follow_symlinks") is False, "a chown that follows links is the bug"
-        _swap_then_record(os.stat(str(target), dir_fd=kw["dir_fd"], follow_symlinks=False))  # pyright: ignore[reportArgumentType]
+        _swap_then_record(os.stat(str(target), dir_fd=kw["dir_fd"], follow_symlinks=False))  # pyrefly: ignore[bad-argument-type]
 
     monkeypatch.setattr(os, "lchown", _fake_lchown)
     monkeypatch.setattr(os, "chown", _fake_chown)

@@ -939,7 +939,7 @@ def test_prepare_write_target_hands_back_the_created_state_base(
 
     monkeypatch.setattr(os, "lchown", _record)
     monkeypatch.setattr(os, "chown", _record_at)
-    target = write_mod._prepare_write_target(repo_root, to_repo=True)  # pyright: ignore[reportPrivateUsage]
+    target = write_mod._prepare_write_target(repo_root, to_repo=True)
     assert target.parent.is_dir()
     assert base in chowned  # the created base is handed back...
     assert home / ".local" in chowned  # ...and every created level above it

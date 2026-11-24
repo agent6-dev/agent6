@@ -25,12 +25,12 @@ from agent6.tools import results
 from agent6.vcs.git import read as git_read
 from tests import review_env, review_helpers
 from tests.unit.test_review_gate import (
-    _exec,  # pyright: ignore[reportPrivateUsage]
-    _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
-    _resp,  # pyright: ignore[reportPrivateUsage]
-    _resp_with_tool_use,  # pyright: ignore[reportPrivateUsage]
-    _verify_pass_tool_use,  # pyright: ignore[reportPrivateUsage]
-    _wf,  # pyright: ignore[reportPrivateUsage]
+    _exec,
+    _finish_tool_use,
+    _resp,
+    _resp_with_tool_use,
+    _verify_pass_tool_use,
+    _wf,
 )
 
 # A diff touching foo.py new line 11, so a "foo.py:11" citation grounds.
@@ -112,11 +112,9 @@ def _begin() -> list[dict[str, Any]]:
 
 
 def _drive(wf: loop.Harness, messages: list[dict[str, Any]]) -> Any:
-    wf._emit_start(  # pyright: ignore[reportPrivateUsage]
-        journal.SessionStart(user_task="t", mode="run", execution_id=wf.execution_id)
-    )
+    wf._emit_start(journal.SessionStart(user_task="t", mode="run", execution_id=wf.execution_id))
     conversation = loop_conversation.Conversation.from_wire(messages)
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+    result = wf._drive_loop(
         system="S",
         conversation=conversation,
         tool_calls=0,

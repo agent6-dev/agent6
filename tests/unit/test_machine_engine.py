@@ -915,7 +915,7 @@ def test_a_wake_record_outlives_the_step_that_consumes_it(tmp_path: pathlib.Path
         if isinstance(event, machine_journal.StepEvent):
             armed.append(journal.read_pending_wait())
             raise KeyboardInterrupt("died between the wake and its StepEvent")
-        appended(event)  # pyright: ignore[reportArgumentType]
+        appended(event)  # pyrefly: ignore[bad-argument-type]
 
     journal.append = _die_on_the_step  # type: ignore[method-assign]
     with pytest.raises(KeyboardInterrupt):
@@ -1909,7 +1909,7 @@ def test_a_wait_never_inherits_the_previous_waits_record(tmp_path: pathlib.Path)
     appended = journal.append
 
     def _die_after_the_step(event: object) -> None:
-        appended(event)  # pyright: ignore[reportArgumentType]
+        appended(event)  # pyrefly: ignore[bad-argument-type]
         if isinstance(event, machine_journal.StepEvent):
             raise KeyboardInterrupt("died between the wake's StepEvent and the clear")
 
@@ -1971,7 +1971,7 @@ def test_a_revisited_wait_state_arms_its_own_fresh_instant(tmp_path: pathlib.Pat
     appended = journal.append
 
     def _die_after_the_step(event: object) -> None:
-        appended(event)  # pyright: ignore[reportArgumentType]
+        appended(event)  # pyrefly: ignore[bad-argument-type]
         if isinstance(event, machine_journal.StepEvent) and event.seq == 0:
             raise KeyboardInterrupt("died between the wake's StepEvent and the clear")
 

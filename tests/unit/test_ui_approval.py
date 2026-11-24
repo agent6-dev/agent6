@@ -264,8 +264,8 @@ def test_worker_pid_without_start_time_probes_pid_only(tmp_path: pathlib.Path) -
 
 
 def test_ps_start_time_reports_self_and_rejects_dead() -> None:
-    assert process._ps_field(os.getpid(), "lstart")  # pyright: ignore[reportPrivateUsage]
-    assert process._ps_field(999999999, "lstart") == ""  # pyright: ignore[reportPrivateUsage]
+    assert process._ps_field(os.getpid(), "lstart")
+    assert process._ps_field(999999999, "lstart") == ""
 
 
 def test_worker_pid_identity_via_ps_where_proc_is_absent(

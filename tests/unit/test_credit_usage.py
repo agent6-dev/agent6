@@ -34,7 +34,7 @@ def test_a_reading_adds_its_decline_without_rereading_the_series(
 ) -> None:
     """Each reading re-sorted the whole series, quadratic over a run's calls."""
     reread: list[int] = []
-    declines = credit_usage._declines  # pyright: ignore[reportPrivateUsage]
+    declines = credit_usage._declines
 
     def counted(readings: Iterable[credit_usage.Reading]) -> decimal.Decimal:
         seen = list(readings)

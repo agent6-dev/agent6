@@ -18,7 +18,7 @@ def _policy(tmp_path: pathlib.Path, level: str, argv: tuple[str, ...], devices: 
     base = policy.jail_policy(
         tmp_path,
         Config(),
-        level,  # pyright: ignore[reportArgumentType]
+        level,  # pyrefly: ignore[bad-argument-type]
         argv,
         network="none",
     )

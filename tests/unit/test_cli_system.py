@@ -50,7 +50,7 @@ def test_status_recognizes_apparmor_when_parser_is_outside_the_user_path(
 
     monkeypatch.setattr(sc, "_host_lsm", lambda: "lockdown,yama,apparmor,bpf")
     monkeypatch.setattr(shutil, "which", _not_found)
-    assert sc._cmd_system_apparmor("status") == 0  # pyright: ignore[reportPrivateUsage]
+    assert sc._cmd_system_apparmor("status") == 0
     assert "does not use AppArmor" not in capsys.readouterr().out
 
 
@@ -58,7 +58,7 @@ def test_install_refused_on_non_apparmor_host(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(sc, "_apparmor_present", lambda: False)
-    rc = sc._cmd_system_apparmor("install")  # pyright: ignore[reportPrivateUsage]
+    rc = sc._cmd_system_apparmor("install")
     assert rc == 1
     assert "does not use AppArmor" in capsys.readouterr().err
 
@@ -69,13 +69,13 @@ def test_install_writes_profile_and_reloads(
     monkeypatch.setattr(sc, "_apparmor_present", lambda: True)
     dest = tmp_path / "agent6-jail"
     monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(dest))
-    rc = sc._cmd_system_apparmor("install")  # pyright: ignore[reportPrivateUsage]
+    rc = sc._cmd_system_apparmor("install")
     assert rc == 0
     # cp <tmp> <dest>, then apparmor_parser -r <dest>
     assert priv_calls[0][:2] == ["apparmor_parser", "-r"]  # loaded from the temp file first
     assert priv_calls[1][0] == "cp" and priv_calls[1][2] == str(dest)
     # The bundled profile pins the launcher binary.
-    assert "profile agent6-jail /**/agent6/sandbox/_bin/agent6-jail" in sc._APPARMOR_PROFILE  # pyright: ignore[reportPrivateUsage]
+    assert "profile agent6-jail /**/agent6/sandbox/_bin/agent6-jail" in sc._APPARMOR_PROFILE
 
 
 def test_bundled_profile_parses_as_apparmor() -> None:
@@ -89,7 +89,7 @@ def test_bundled_profile_parses_as_apparmor() -> None:
         pytest.skip("apparmor_parser not installed")
     profile = tempfile.NamedTemporaryFile("w", suffix=".aa", delete=False)  # noqa: SIM115
     with profile as fh:
-        fh.write(sc._APPARMOR_PROFILE)  # pyright: ignore[reportPrivateUsage]
+        fh.write(sc._APPARMOR_PROFILE)
     # -d parses and dumps; it never loads into the kernel, so no privileges.
     done = subprocess.run([parser, "-d", profile.name], capture_output=True, text=True, check=False)
     pathlib.Path(profile.name).unlink(missing_ok=True)
@@ -99,7 +99,7 @@ def test_bundled_profile_parses_as_apparmor() -> None:
 def test_remove_absent_is_noop(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     monkeypatch.setattr(sc, "_apparmor_present", lambda: True)
     monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(tmp_path / "nope"))
-    rc = sc._cmd_system_apparmor("remove")  # pyright: ignore[reportPrivateUsage]
+    rc = sc._cmd_system_apparmor("remove")
     assert rc == 0
 
 
@@ -118,7 +118,7 @@ def test_remove_deletes_profile_after_apparmor_is_disabled(
         return True
 
     monkeypatch.setattr(sc, "_run_priv", _run_priv)
-    assert sc._cmd_system_apparmor("remove") == 0  # pyright: ignore[reportPrivateUsage]
+    assert sc._cmd_system_apparmor("remove") == 0
     assert calls == [["rm", "-f", str(profile)]]
 
 
@@ -138,7 +138,7 @@ def test_remove_unloads_then_deletes(
         return True
 
     monkeypatch.setattr(sc, "_run_priv", _run_priv_rm)
-    rc = sc._cmd_system_apparmor("remove")  # pyright: ignore[reportPrivateUsage]
+    rc = sc._cmd_system_apparmor("remove")
     assert rc == 0
     assert priv_calls[0][:2] == ["apparmor_parser", "-R"]  # unload first
     assert priv_calls[1][0] == "rm"  # then delete
@@ -152,7 +152,7 @@ def test_remove_reports_failure_if_file_remains(
     profile = tmp_path / "agent6-jail"
     profile.write_text("x", encoding="utf-8")
     monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(profile))
-    rc = sc._cmd_system_apparmor("remove")  # pyright: ignore[reportPrivateUsage]
+    rc = sc._cmd_system_apparmor("remove")
     assert rc == 1  # priv_calls mock left the file in place
 
 
@@ -174,7 +174,7 @@ def test_remove_does_not_report_an_unloaded_profile_as_an_error(
         return subprocess.CompletedProcess(argv, 1)
 
     monkeypatch.setattr(sc.subprocess, "run", _run)
-    assert sc._cmd_system_apparmor("remove") == 0  # pyright: ignore[reportPrivateUsage]
+    assert sc._cmd_system_apparmor("remove") == 0
     assert "ERROR:" not in capsys.readouterr().err
 
 
@@ -200,12 +200,12 @@ def test_a_profile_the_parser_refuses_never_reaches_the_path(
         return argv[0] != "apparmor_parser"
 
     monkeypatch.setattr(sc, "_run_priv", _run_priv)
-    assert sc._cmd_system_apparmor("install") == 1  # pyright: ignore[reportPrivateUsage]
+    assert sc._cmd_system_apparmor("install") == 1
     assert not dest.exists()
     assert [c[0] for c in calls] == ["apparmor_parser"]
     dest.write_text("previous", encoding="utf-8")
     calls.clear()
-    assert sc._cmd_system_apparmor("install") == 1  # pyright: ignore[reportPrivateUsage]
+    assert sc._cmd_system_apparmor("install") == 1
     assert dest.read_text(encoding="utf-8") == "previous"
     assert [c[0] for c in calls] == ["apparmor_parser"]
 
@@ -228,5 +228,5 @@ def test_a_failed_first_copy_removes_its_partial_file(
         return argv[0] == "apparmor_parser"
 
     monkeypatch.setattr(sc, "_run_priv", _run_priv)
-    assert sc._cmd_system_apparmor("install") == 1  # pyright: ignore[reportPrivateUsage]
+    assert sc._cmd_system_apparmor("install") == 1
     assert not dest.exists()

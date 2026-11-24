@@ -71,11 +71,11 @@ def _force(monkeypatch: pytest.MonkeyPatch, isolation: str) -> None:
 
 def _check_mcp(
     servers: dict[str, object], *, sandbox: dict[str, object] | None = None
-) -> list[kinds.DoctorCheck]:  # pyright: ignore[reportPrivateUsage]
+) -> list[kinds.DoctorCheck]:
     cfg = Config.model_validate(
         {"sandbox": sandbox or {}, "mcp": {"enabled": True, "servers": servers}}
     )
-    return check_cmds._doctor_check_mcp(cfg)  # pyright: ignore[reportPrivateUsage]
+    return check_cmds._doctor_check_mcp(cfg)
 
 
 def _never_started(monkeypatch: pytest.MonkeyPatch) -> None:

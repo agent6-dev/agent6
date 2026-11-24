@@ -27,15 +27,15 @@ def test_registration_rollback_retains_private_job_until_persistence_succeeds(
     work = tmp_path / "work"
     work.mkdir()
     shells = background.BackgroundShells(tmp_path / "shells")
-    registered: list[background._Shell] = []  # pyright: ignore[reportPrivateUsage]
-    real_register = background.BackgroundShells._register  # pyright: ignore[reportPrivateUsage]
+    registered: list[background._Shell] = []
+    real_register = background.BackgroundShells._register
     real_write = pathlib.Path.write_text
     real_pwrite = os.pwrite
     writes = 0
 
     def register(
         self: background.BackgroundShells,
-        shell: background._Shell,  # pyright: ignore[reportPrivateUsage]
+        shell: background._Shell,
     ) -> background.ShellView:
         registered.append(shell)
         return real_register(self, shell)
@@ -71,24 +71,24 @@ def test_registration_rollback_retains_private_job_until_persistence_succeeds(
                 )
             assert len(registered) == 1
             shell = registered[0]
-            assert shells._shells.get(shell.id) is shell, (  # pyright: ignore[reportPrivateUsage]
+            assert shells._shells.get(shell.id) is shell, (
                 "rollback lost ownership before persistence completed"
             )
             assert isinstance(raised.value, background.BackgroundError)
             assert "metadata full" in str(raised.value) and f"{failure} full" in str(raised.value)
             fd = shell.log_fd
-            owner = shell.job._session  # pyright: ignore[reportPrivateUsage]
-            assert owner._proc.poll() is None  # pyright: ignore[reportPrivateUsage]
+            owner = shell.job._session
+            assert owner._proc.poll() is None
             os.fstat(fd)
             if failure == "copy":
                 assert os.pread(fd, 100, 0) == b"be"
             with pytest.raises(background.BackgroundError, match="could not persist"):
                 shells.stop_all()
             assert shell.log_fd == fd
-            assert owner._proc.poll() is None  # pyright: ignore[reportPrivateUsage]
+            assert owner._proc.poll() is None
 
         shells.stop_all()
-        assert owner._proc.poll() == 0  # pyright: ignore[reportPrivateUsage]
+        assert owner._proc.poll() == 0
         with pytest.raises(OSError):
             os.fstat(fd)
         assert (shells.log_root / shell.id / "out.log").read_bytes() == b"before\n"
@@ -165,13 +165,13 @@ def _assert_dispatcher_close_retries(
                 },
             ).to_wire()
             assert started["background_id"] == "bg1" and started["still_running"]
-            shells = tools._shells  # pyright: ignore[reportPrivateUsage]
-            access = tools._command_access  # pyright: ignore[reportPrivateUsage]
+            shells = tools._shells
+            access = tools._command_access
             assert shells is not None and access is not None
-            shell = shells._get("bg1")  # pyright: ignore[reportPrivateUsage]
-            owner = shell.job._session  # pyright: ignore[reportPrivateUsage]
-            handle = shell.job._handle  # pyright: ignore[reportPrivateUsage]
-            assert not shell.job._owns_session  # pyright: ignore[reportPrivateUsage]
+            shell = shells._get("bg1")
+            owner = shell.job._session
+            handle = shell.job._handle
+            assert not shell.job._owns_session
             assert access.session is owner
             temp, net = access.temp, access.network
             if detached:
@@ -182,7 +182,7 @@ def _assert_dispatcher_close_retries(
                 tools.dispatch("read_background", {"id": "bg1", "wait_s": 0})
             fd = shell.log_fd
             assert os.pread(fd, 100, 0) == b"before\n"
-            holder = net._holder if net is not None else None  # pyright: ignore[reportPrivateUsage]
+            holder = net._holder if net is not None else None
             assert isolation != "full" or holder is not None
             assert isolation == "full" or temp is not None
             assert holder is None or holder.poll() is None
@@ -198,10 +198,10 @@ def _assert_dispatcher_close_retries(
                 for attempt in range(1, 3):
                     with pytest.raises(background.BackgroundError, match="copy full") as raised:
                         tools.close()
-                    assert owner._proc.poll() is None  # pyright: ignore[reportPrivateUsage]
-                    assert shells._get("bg1") is shell  # pyright: ignore[reportPrivateUsage]
+                    assert owner._proc.poll() is None
+                    assert shells._get("bg1") is shell
                     assert shell.log_fd == fd and os.pread(fd, 100, 0) == b"before\naf"
-                    assert not tools._closed  # pyright: ignore[reportPrivateUsage]
+                    assert not tools._closed
                     assert access.session is owner
                     assert access.temp is temp and access.network is net
                     assert holder is None or holder.poll() is None
@@ -221,9 +221,9 @@ def _assert_dispatcher_close_retries(
                     assert str(raised.value) in degraded[-1]["detail"]
 
             tools.close()
-            assert tools._closed  # pyright: ignore[reportPrivateUsage]
-            assert owner._close_error == ""  # pyright: ignore[reportPrivateUsage]
-            assert owner._proc.poll() == 0  # pyright: ignore[reportPrivateUsage]
+            assert tools._closed
+            assert owner._close_error == ""
+            assert owner._proc.poll() == 0
             assert shell.log_fd == -1
             with pytest.raises(OSError):
                 os.fstat(fd)

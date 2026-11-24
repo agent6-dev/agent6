@@ -124,7 +124,7 @@ def test_unknown_tagged_call_returns_the_dispatcher_error(tmp_path: pathlib.Path
     )
     turn = loop_state.TurnState(number=1, resp=response, assistant=assistant)
 
-    harness._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
+    harness._turn_dispatch_tools(
         loop_state.LoopState(original_task="Write a.py", tool_calls=0), turn, turn_context()
     )
 
@@ -230,7 +230,7 @@ def test_recovered_id_and_result_are_echoed_once_on_the_next_turn(
     turn = loop_state.TurnState(number=1, resp=response, assistant=assistant)
 
     assert (
-        harness._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
+        harness._turn_dispatch_tools(
             loop_state.LoopState(original_task="Read a.py", tool_calls=0), turn, turn_context()
         )
         is None
@@ -291,7 +291,7 @@ def test_malformed_recovered_call_returns_only_its_error(
     )
     turn = loop_state.TurnState(number=1, resp=response, assistant=assistant)
 
-    harness._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
+    harness._turn_dispatch_tools(
         loop_state.LoopState(original_task="Read a.py", tool_calls=0), turn, turn_context()
     )
 

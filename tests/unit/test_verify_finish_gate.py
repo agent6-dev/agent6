@@ -142,7 +142,7 @@ def test_settled_base_only_green_is_unverified(tmp_path: pathlib.Path) -> None:
     wf.events = emitted
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_baseline(ok=True)
-    ctx = wf._turn_context(state, turn=3, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=3, execution_start=1)
     from agent6.harness import guards
 
     end = guards.settled_end(state, ctx)
@@ -275,7 +275,7 @@ def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(
     wf = _wf(verify=True, root=tmp_path)
 
     def dirty(tree_before: str) -> bool:
-        return tool_effects._left_the_tree_dirty(wf, tree_before)  # pyright: ignore[reportPrivateUsage]
+        return tool_effects._left_the_tree_dirty(wf, tree_before)
 
     def before(name: str) -> str:
         return tool_effects.tree_before_command(wf, name)
@@ -464,8 +464,8 @@ def _turn(*, finishing: bool = False, edited: bool = False) -> Any:
 
 def _verify_gate(wf: loop.Harness, state: loop_state.LoopState, turn: Any) -> None:
     """The verify gate's answer over *turn*, applied through the loop."""
-    ctx = wf._turn_context(state, turn=turn.number, execution_start=1)  # pyright: ignore[reportPrivateUsage]
-    wf._refuse(state, turn, finish_gates.verify_finish(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=turn.number, execution_start=1)
+    wf._refuse(state, turn, finish_gates.verify_finish(turn, state, ctx))
 
 
 def _notices(turn: Any) -> list[str]:
@@ -981,7 +981,7 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     wf.end_gates(
         state,
         turn,
-        wf._turn_context(state, turn=turn.number, execution_start=1),  # pyright: ignore[reportPrivateUsage]
+        wf._turn_context(state, turn=turn.number, execution_start=1),
         ending="silent_finish",
         gates=finish_gates.SILENT_END_GATES,
     )
@@ -1027,7 +1027,7 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     wf.end_gates(
         state,
         turn,
-        wf._turn_context(state, turn=turn.number, execution_start=1),  # pyright: ignore[reportPrivateUsage]
+        wf._turn_context(state, turn=turn.number, execution_start=1),
         ending="silent_finish",
         gates=finish_gates.SILENT_END_GATES,
     )
