@@ -10,4 +10,4 @@ Main modules: `kinds`, `paths`, `errors`, `budget`, `directive`, `evidence`, `pa
 
 from __future__ import annotations
 
-__version__ = "0.0.45"
+__version__ = "0.0.46"
