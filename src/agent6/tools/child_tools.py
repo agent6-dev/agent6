@@ -28,7 +28,7 @@ class ChildLine:
         id: The child's session id, the handle `parallel` returned.
         attempt: Its number within this task.
         state: Where the child stands, including its review, ranking or recorded result.
-        task: The first line of its task.
+        task: Up to 80 characters of its first nonblank task line.
         running: Whether a wait has something to wait for: the child, or the judges ranking it.
         mergeable: Whether the child stopped or its continued work awaits an explicit merge.
         commits: Its measured commits beyond start, None when unknown.

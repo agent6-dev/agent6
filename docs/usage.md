@@ -474,7 +474,7 @@ After import the clone goes, unless the child stopped or the clone holds work th
 Before cleanup or prune, the parent pins the child's recorded working and staged trees under `refs/agent6/<child>/trees/` and checks both pins.
 Its finished work follows the [parallel merge policy](#parallel-directive).
 A child runs under the parent's own config and the run's remaining budget, with no turn cap or deadline of its own.
-`read_background` with a child's id returns its id, attempt, state, task, `running`, `mergeable` and commit count beside its transcript tail.
+`read_background` with a child's id returns its id, attempt, state, task preview, `running`, `mergeable` and commit count beside its transcript tail.
 `mergeable` marks stopped work or a continued child whose commits await an explicit merge.
 A merge can still be refused, for example if another attempt already merged.
 With a command's `background_id` it returns the command preview, state, `returncode`, `duration_s` and `still_running` beside the output tail.

@@ -407,9 +407,10 @@ class ReadBackgroundInput(_ToolInput):
     )
 
     CHILDREN_NOTE: ClassVar[str] = (
-        " A child id returns `id`, `attempt`, `state`, `task`, `running`, `mergeable`, `commits`"
-        " (null if unknown) and the transcript tail in `output`. With no `id`, `children` lists"
-        " one line per child when present. A positive `wait_s` waits for the next child to end."
+        " A child id returns `id`, `attempt`, `state`, `task` (preview), `running`, `mergeable`,"
+        " `commits` (null if unknown) and the transcript tail in `output`. With no `id`,"
+        " `children` lists one line per child when present. A positive `wait_s` waits for the"
+        " next child to end."
     )
 
     id: str = ""

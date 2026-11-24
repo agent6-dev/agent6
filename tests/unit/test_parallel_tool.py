@@ -218,6 +218,7 @@ def test_a_default_run_reads_the_background_tools_text_unchanged(tmp_path: pathl
     offered = _dispatcher(tmp_path, _config(tool=True), work=_Work())
     read, stop = (_description(offered, name) for name in ("read_background", "stop_background"))
     assert read.endswith(schema.ReadBackgroundInput.CHILDREN_NOTE)
+    assert "`task` (preview)" in read
     assert "`harness.command_checkin_s` (900s)" in read
     assert "waits for the next child to end" in read
     assert stop.endswith(schema.StopBackgroundInput.CHILDREN_NOTE)
