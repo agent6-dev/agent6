@@ -323,7 +323,8 @@ class Tiered(_Scheduled):
             context: The prepared worker request.
 
         Returns:
-            What happened to the history; `summarize` and `truncate` restarted it.
+            What happened to the history; `summarize` and `truncate` restarted it, and
+            `resend` also names a restart that had nothing to replace.
 
         Raises:
             BudgetExceededError: The budget refused the summary.
@@ -333,25 +334,24 @@ class Tiered(_Scheduled):
         """
         conversation = context.conversation
         mode = context.settings.cold_start
-        match mode:
-            case "resend":
-                return mode
-            case "drop":
-                self.drop(context, cold=True)
-                return mode
-            case "summarize":
-                if not self.summarise_and_restart(context, cold=True, focus=_take_focus(context)):
-                    return "summary_failed"
-            case "truncate":
-                replay = retention.select(
-                    conversation.messages, context.settings, context.task.text
-                )
-                conversation.restart(
-                    context.restart_notice(replay.quotes, task=replay.task, truncated=True),
-                    keep=replay.tail,
-                    quotes=replay.quotes,
-                )
-                self._set_restart_floor(context)
+        if mode == "resend":
+            return mode
+        if mode == "drop":
+            self.drop(context, cold=True)
+            return mode
+        replay = retention.select(conversation.messages, context.settings, context.task.text)
+        if not replay.replaced:
+            # The caps keep everything, so the history is sent as it is.
+            return "resend"
+        if mode == "truncate":
+            conversation.restart(
+                context.restart_notice(replay.quotes, task=replay.task, truncated=True),
+                keep=replay.tail,
+                quotes=replay.quotes,
+            )
+            self._set_restart_floor(context)
+        elif not self.summarise_and_restart(context, cold=True, focus=_take_focus(context)):
+            return "summary_failed"
         elided, gists = compaction_rules.count_elisions(conversation)
         context.emit(journal.CompactRestored(elided=elided, gists=gists))
         return mode

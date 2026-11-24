@@ -107,7 +107,7 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
         cfg = Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": url, "idle_compact_s": 0.001}},
-                "compaction": {"cold_start": "truncate"},
+                "compaction": {"cold_start": "truncate", "keep_recent_turns": 0},
                 "models": {"default": {"model": "p/m"}},
                 "git": {"control": control, "worktree": {"base_dir": str(tmp_path / "clones")}},
                 "sandbox": {"isolation": "none", "run_commands": "allow"},

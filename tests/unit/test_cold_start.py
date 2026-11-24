@@ -53,6 +53,7 @@ def _resume(
     plan: pathlib.Path | None = None,
     saved: loop_conversation.Conversation | None = None,
     summarize_at: int = 10**9,
+    keep_turns: int = 0,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], writers.Writer]:
     path = directory / "logs.jsonl"
     path.write_text("".join(json.dumps(row) + "\n" for row in rows))
@@ -100,7 +101,7 @@ def _resume(
             elision_gists=False,
             helper=helper,
             helper_context_tokens=200000,
-            keep_recent_turns=0,
+            keep_recent_turns=keep_turns,
             keep_thinking_turns=1,
         ),
         max_turns=1,
@@ -171,6 +172,23 @@ def test_a_cold_restart_states_the_task_a_parent_gave(
     """A child restarted cold had its task in no message."""
     sent, _, _, _ = _resume(tmp_path, mode, [rules.request(model="other")], saved=_history("model"))
     assert "TASK (the goal, verbatim):\nOriginal goal." in sent[0]["content"][0]["text"]
+
+
+@pytest.mark.parametrize("mode", ["summarize", "truncate"])
+def test_a_cold_restart_with_nothing_to_replace_resends(
+    tmp_path: pathlib.Path, mode: kinds.ColdStart
+) -> None:
+    """The helper summarized an empty transcript; a truncate notice said history was left out."""
+    saved = loop_conversation.Conversation()
+    saved.notice("Original goal.", origin="operator")
+    saved.assistant([{"type": "text", "text": "I looked and it is fine."}])
+    previous = [rules.request(model="other")]
+    resend, _, _, _ = _resume(tmp_path, "resend", previous, saved=saved, keep_turns=-1)
+    sent, rows, _, helper = _resume(tmp_path, mode, previous, saved=saved, keep_turns=-1)
+    assert sent == resend and not helper.calls
+    (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
+    assert (row["mode"], row["action"], row["chars_not_sent"]) == (mode, "resend", 0)
+    assert "resend history" in row["message"]
 
 
 @pytest.mark.parametrize(

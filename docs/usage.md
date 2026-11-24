@@ -579,6 +579,9 @@ The wait setting `idle_compact_min_chars` does not apply at resume.
 - `truncate`: restart with the retained history and no summary call.
   The notice states what was left out and points to `read_session` when that tool is available.
 
+`summarize` and `truncate` replace only what the retention settings do not keep.
+When those settings keep the whole conversation, it is sent as it is, no helper is called, and the action reads `resend`.
+
 `drop` and `truncate` do not run a second compaction on the same request.
 The next ordinary check handles size and any pending `/compact`.
 The start line and `compact.cold_start` journal entry report the route change or the gap and limit, the action, and the net context characters the cold step did not send to the worker.
