@@ -143,3 +143,22 @@ These are single requests or sessions, not estimates of provider reliability.
 | Same question | `providers.openai.service_tier = "fast"` | Exit 1, HTTP 400 on `service_tier`: “Invalid service_tier argument: The requested service tier is not allowed for this project.” No retry. |
 | Identify the shape and word on a PNG | `chatgpt/gpt-6.2-sol`, medium | `read_file` supplied the image. The answer named the blue square and MINT. CLI asks do not attach image bytes directly. |
 | Search for the newest stable Python release | `anthropic/claude-sonnet-4-6`, hosted search enabled | One search. The answer named 3.15.2 and cited `https://www.python.org/downloads/release/python-3152/`. The check did not grade the release number. |
+
+## The default retry count in ask mode
+
+The question asked how many red finish certifications return to the model by default, with only the number as the answer.
+The key is `harness.verify.retries`; its default is `2`.
+Each ask used a fresh empty git repository, full isolation, the control or no-docs patch, and `chatgpt/gpt-6.2-sol` at medium.
+The journal gives tool calls and the final message.
+
+| Tool offered | Run | Docs calls | Answer | Correct | Turns |
+|---|---:|---:|---:|---|---:|
+| Yes | 1 | 6 | 2 | Yes | 8 |
+| Yes | 2 | 2 | 2 | Yes | 3 |
+| Yes | 3 | 5 | 2 | Yes | 6 |
+| No | 1 | 0 | 3 | No | 4 |
+| No | 2 | 0 | 2 | Yes | 3 |
+| No | 3 | 0 | 2 | Yes | 4 |
+
+With docs, three of three answers matched; without docs, two of three matched.
+One numeric question cannot distinguish recall from a correct guess.
