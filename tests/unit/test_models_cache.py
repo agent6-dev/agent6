@@ -21,7 +21,7 @@ from agent6.config import (
     secret_store,
 )
 from agent6.models import cache as models_cache
-from agent6.models import listing_store
+from agent6.models import listing_store, pricing
 from agent6.models import registry as models_registry
 from agent6.providers import oauth, oauth_protocol, provider_types, transport
 
@@ -181,14 +181,43 @@ def test_fresh_cache_skips_network(
 ) -> None:
     path = cache_home / "models" / "anthropic.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"models": ["claude-cached"]}), encoding="utf-8")
+    entry = AnthropicProviderEntry(backend="anthropic")
+    path.write_text(
+        json.dumps({"models": ["claude-cached"], "binding": listing_store.binding(entry)})
+    )
 
     def _boom(*a: object, **k: object) -> httpx2.Response:
         raise AssertionError("network must not be hit when cache is fresh")
 
     monkeypatch.setattr(transport, "http_request", _boom)
-    entry = AnthropicProviderEntry(backend="anthropic")
     assert models_cache.list_models("anthropic", entry, "sk-test") == ["claude-cached"]
+
+
+@pytest.mark.parametrize("bound", [False, True])
+def test_refresh_prices_when_the_listing_does_not_match_the_entry(
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch, bound: bool
+) -> None:
+    old = OpenAIProviderEntry(backend="openai", base_url="http://localhost:1")
+    new = OpenAIProviderEntry(backend="openai", base_url="http://localhost:2")
+    path = cache_home / "models" / "local.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps({"models": ["m"], "binding": listing_store.binding(old) if bound else None})
+    )
+
+    def listing(method: str, url: str, **_kwargs: object) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            json={
+                "data": [{"id": "m", "pricing": {"prompt": "0.000001", "completion": "0.000002"}}]
+            },
+            request=httpx2.Request(method, url),
+        )
+
+    monkeypatch.setattr(transport, "http_request", listing)
+    models_cache.list_models("local", new, None)
+    route = kinds.ModelRoute("local", "m")
+    assert pricing.lookup_price(route, {"local": new}) == pricing.Quote(pricing.Price(1, 2), route)
 
 
 def test_stale_cache_used_on_network_error(

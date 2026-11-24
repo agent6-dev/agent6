@@ -40,15 +40,9 @@ _CACHE_TTL_S = 600
 _FETCH_TIMEOUT_S = 1.5  # tab completion waits on this
 
 
-def _read_cache(path: pathlib.Path | None) -> list[str] | None:
-    """Return the cached model ids, or None when the file is missing or malformed."""
-    if path is None:
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    models = data.get("models") if isinstance(data, dict) else None
+def _model_ids(data: dict[str, Any]) -> list[str] | None:
+    """Return the cached model ids, or None when the listing has none."""
+    models = data.get("models")
     if isinstance(models, list) and all(isinstance(m, str) for m in models):
         return models
     return None
@@ -121,14 +115,12 @@ def cached_input_capabilities(
         return unknown
     try:
         age = time.time() - path.stat().st_mtime
-        body = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except OSError:
         return unknown
-    if (
-        not 0 <= age < _CACHE_TTL_S
-        or not isinstance(body, dict)
-        or body.get("binding") != listing_store.binding(entry)
-    ):
+    if not 0 <= age < _CACHE_TTL_S:
+        return unknown
+    body = listing_store.read(path)
+    if body.get("binding") != listing_store.binding(entry):
         return unknown
     modalities = body.get("modalities")
     values = modalities.get(model) if isinstance(modalities, dict) else None
@@ -497,15 +489,20 @@ def list_models(
         timeout_s: The fetch timeout.
 
     Returns:
-        A fresh cache, else the live listing (cached), else the stale cache, else [].
+        A fresh, bound listing, else the live listing, else cached model ids or [].
     """
     path = listing_store.cache_path(provider_name)
-    cached = _read_cache(path)
+    data = listing_store.read(path)
+    cached = _model_ids(data)
     age = float("inf")
     if path is not None:
         with contextlib.suppress(OSError):
             age = time.time() - path.stat().st_mtime
-    if cached is not None and age < ttl_s:
+    if (
+        cached is not None
+        and 0 <= age < ttl_s
+        and data.get("binding") == listing_store.binding(entry)
+    ):
         return cached
     return fetch_models_live(provider_name, entry, api_key, timeout_s=timeout_s) or cached or []
 
@@ -542,7 +539,7 @@ def fetch_models_live(
 
 def cached_models(provider_name: str) -> list[str]:
     """Return the provider's cached model ids without touching the network, or []."""
-    return _read_cache(listing_store.cache_path(provider_name)) or []
+    return _model_ids(listing_store.read(listing_store.cache_path(provider_name))) or []
 
 
 def cached_context_window(provider_name: str, keys: tuple[str, ...]) -> int | None:
@@ -555,14 +552,7 @@ def cached_context_window(provider_name: str, keys: tuple[str, ...]) -> int | No
     Returns:
         The window in tokens, or None on any miss.
     """
-    path = listing_store.cache_path(provider_name)
-    if path is None:
-        return None
-    try:
-        body = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    ctx = body.get("context") if isinstance(body, dict) else None
+    ctx = listing_store.read(listing_store.cache_path(provider_name)).get("context")
     if not isinstance(ctx, dict):
         return None
     for key in keys:

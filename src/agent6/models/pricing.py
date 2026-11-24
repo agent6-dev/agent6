@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import dataclasses
-import json
 import math
 import re
 from collections.abc import Mapping
@@ -69,14 +68,8 @@ class Quote:
 
 
 def _prices(source: str, listing: config.ProviderEntry) -> dict[str, object]:
-    path = listing_store.cache_path(source)
-    if path is None:
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    if not isinstance(data, dict) or data.get("binding") != listing_store.binding(listing):
+    data = listing_store.read(listing_store.cache_path(source))
+    if data.get("binding") != listing_store.binding(listing):
         return {}
     prices = data.get("pricing")
     return prices if isinstance(prices, dict) else {}

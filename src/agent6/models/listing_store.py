@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
+from typing import Any
 
 from agent6 import config, paths
 
@@ -32,3 +33,21 @@ def binding(entry: config.ProviderEntry) -> str:
     return hashlib.sha256(
         json.dumps(entry.model_dump(mode="json"), sort_keys=True).encode()
     ).hexdigest()
+
+
+def read(path: pathlib.Path | None) -> dict[str, Any]:
+    """Read the cached listing facts.
+
+    Args:
+        path: The provider's cache path.
+
+    Returns:
+        The listing object, empty for a missing or unreadable file.
+    """
+    if path is None:
+        return {}
+    try:
+        body = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return body if isinstance(body, dict) else {}

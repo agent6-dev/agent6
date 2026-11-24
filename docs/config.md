@@ -612,6 +612,7 @@ For direct Anthropic calls it also accepts the catalog spelling, such as `anthro
 A gateway model without a known vendor needs an unambiguous match.
 A missing reference or price leaves the route unpriced.
 A cached price under `$XDG_CACHE_HOME/agent6/models/` must match the current provider entry.
+At startup, a missing or mismatched binding triggers a listing refresh even if the file is recent.
 
 ## `[machine]`
 
