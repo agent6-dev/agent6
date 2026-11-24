@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import pathlib
 import stat
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from agent6 import media, path_safety, terminal
 from agent6.config import Config
@@ -25,16 +25,19 @@ from agent6.tools import (
     schema,
     tool_errors,
 )
-from agent6.tools import index as tools_index
+
+if TYPE_CHECKING:
+    from agent6.tools import dispatch
 
 # What read_file pulls into memory; a bigger file returns its capped prefix with truncated=True.
 MAX_READ_CHARS = 5_000_000
 
 
-def agent6_docs(raw: dict[str, Any]) -> results.ToolResult:
+def agent6_docs(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.ToolResult:
     """Return the index of agent6's bundled docs, or one doc capped at 60k characters.
 
     Args:
+        ctx: Unused for bundled docs.
         raw: The tool call's arguments.
 
     Returns:
@@ -101,12 +104,12 @@ def resolve_read_path(
 
 
 def read_file(
-    ws: path_safety.Workspace, raw: dict[str, Any]
+    ctx: dispatch.ToolContext, raw: dict[str, Any]
 ) -> results.ReadFileResult | results.ReadMediaResult:
     """Read bounded text or deliver one inspected static image or PDF.
 
     Args:
-        ws: The workspace the path resolves in.
+        ctx: The run's workspace boundary.
         raw: The tool call's arguments.
 
     Returns:
@@ -116,7 +119,7 @@ def read_file(
         ToolError: The path is not a file, or its content or range is unsupported.
     """
     args = schema.ReadFileInput.model_validate(raw)
-    sp = resolve_read_path(ws, args.path, "file")
+    sp = resolve_read_path(ctx.workspace, args.path, "file")
     data = path_safety.read_bytes_contained(sp, limit_bytes=media.DOCUMENT_MAX_BYTES + 1)
     if data.startswith((b"%PDF-", b"\x89PNG\r\n\x1a\n", b"\xff\xd8", b"GIF87a", b"GIF89a")) or (
         data.startswith(b"RIFF") and data[8:12] == b"WEBP"
@@ -159,11 +162,11 @@ def read_file(
     )
 
 
-def list_dir(ws: path_safety.Workspace, raw: dict[str, Any]) -> results.ListDirResult:
+def list_dir(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.ListDirResult:
     """List a directory's entries, sorted, capped at `LIST_DIR_CAP`.
 
     Args:
-        ws: The workspace the path resolves in.
+        ctx: The run's workspace boundary.
         raw: The tool call's arguments.
 
     Returns:
@@ -174,10 +177,10 @@ def list_dir(ws: path_safety.Workspace, raw: dict[str, Any]) -> results.ListDirR
         ToolError: The path is not a directory.
     """
     args = schema.ListDirInput.model_validate(raw)
-    sp = resolve_read_path(ws, args.path, "directory")
+    sp = resolve_read_path(ctx.workspace, args.path, "directory")
     listing = sorted(path_safety.list_contained(sp), key=lambda e: e.name)
     # A hidden entry is dropped from the names but counted, so the listing stays true.
-    visible = [e for e in listing if not ws.is_denied(sp.abs_path / e.name)]
+    visible = [e for e in listing if not ctx.workspace.is_denied(sp.abs_path / e.name)]
     # Escaped: a name that is not UTF-8 would fail the snapshot's and the wire's JSON.
     names = ((terminal.printable_name(e.name), e.is_dir) for e in visible[: schema.LIST_DIR_CAP])
     return results.ListDirResult(
@@ -361,20 +364,11 @@ def _change_path(ws: path_safety.Workspace, sp: path_safety.SafePath) -> str:
     return str(sp.rel_path) if sp.base == ws.root else str(sp.abs_path)
 
 
-def apply_edit(
-    ws: path_safety.Workspace,
-    config: Config,
-    extra_protect_paths: tuple[pathlib.Path, ...],
-    index: tools_index.SymbolIndex | None,
-    raw: dict[str, Any],
-) -> results.ToolResult:
+def apply_edit(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.ToolResult:
     """Apply string replacements or a whole-file write to one file.
 
     Args:
-        ws: The workspace the path resolves in.
-        config: The run's config.
-        extra_protect_paths: The operator's and the machine's protected paths.
-        index: The symbol index to notify of the change, when one exists.
+        ctx: The workspace, write policy and optional symbol index.
         raw: The tool call's arguments.
 
     Returns:
@@ -385,9 +379,9 @@ def apply_edit(
             a missing one, an `old_string` is absent or not unique, or nothing would be written.
     """
     args = schema.ApplyEditInput.model_validate(raw)
-    refuse_protected_writes(args.path, config, extra_protect_paths)
-    sp = ws.resolve_write(args.path)
-    refuse_protected_writes(args.path, config, extra_protect_paths, sp)
+    refuse_protected_writes(args.path, ctx.config, ctx.extra_protect_paths)
+    sp = ctx.workspace.resolve_write(args.path)
+    refuse_protected_writes(args.path, ctx.config, ctx.extra_protect_paths, sp)
     applied: list[str] = []
     existing = _existing_text(sp, args.path)
     new_content = existing
@@ -437,9 +431,9 @@ def apply_edit(
     if args.preview:
         return _preview(sp, args.path, existing, new_content, applied=applied)
     path_safety.write_contained(sp, new_content)
-    if index is not None:
-        index.mark_changed(sp.abs_path)
-    changes = (results.FileChange(_change_path(ws, sp), existing, new_content),)
+    if ctx.built_index is not None:
+        ctx.built_index.mark_changed(sp.abs_path)
+    changes = (results.FileChange(_change_path(ctx.workspace, sp), existing, new_content),)
     fits = results.within_diff_budget(changes)
     return results.EditResult(
         applied=tuple(applied),
@@ -517,22 +511,13 @@ def _stage_patch_section(
     return sp, target, existing, new_content, healed
 
 
-def apply_patch(
-    ws: path_safety.Workspace,
-    config: Config,
-    extra_protect_paths: tuple[pathlib.Path, ...],
-    index: tools_index.SymbolIndex | None,
-    raw: dict[str, Any],
-) -> results.ToolResult:
+def apply_patch(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.ToolResult:
     """Apply a unified or V4A patch over one or more files, all or nothing.
 
     Nothing is written until every section applied cleanly in memory.
 
     Args:
-        ws: The workspace the paths resolve in.
-        config: The run's config.
-        extra_protect_paths: The operator's and the machine's protected paths.
-        index: The symbol index to notify of the changes, when one exists.
+        ctx: The workspace, write policy and optional symbol index.
         raw: The tool call's arguments.
 
     Returns:
@@ -555,7 +540,7 @@ def apply_patch(
     healed_all: list[str] = []
     for section in sections:
         sp, target, existing, new_content, healed = _stage_patch_section(
-            ws, config, extra_protect_paths, path_arg=args.path, section=section
+            ctx.workspace, ctx.config, ctx.extra_protect_paths, path_arg=args.path, section=section
         )
         healed_all.extend(healed)
         seen_paths.append(sp.abs_path)
@@ -572,7 +557,9 @@ def apply_patch(
                 )
             )
             continue
-        staged.append((sp, results.FileChange(_change_path(ws, sp), existing, new_content)))
+        staged.append(
+            (sp, results.FileChange(_change_path(ctx.workspace, sp), existing, new_content))
+        )
     if (dupe := _first_repeated(seen_paths)) is not None:
         # Each section stages from disk, so over one file the last write would win silently.
         count = sum(1 for path in seen_paths if path == dupe)
@@ -601,12 +588,12 @@ def apply_patch(
         try:
             if change.after is None:
                 path_safety.unlink_contained(sp)
-                if index is not None:
-                    index.mark_deleted(sp.abs_path)
+                if ctx.built_index is not None:
+                    ctx.built_index.mark_deleted(sp.abs_path)
             else:
                 written[change.path] = path_safety.write_contained(sp, change.after)
-                if index is not None:
-                    index.mark_changed(sp.abs_path)
+                if ctx.built_index is not None:
+                    ctx.built_index.mark_changed(sp.abs_path)
         except (OSError, path_safety.ContainmentError) as exc:
             detail = (exc.strerror or str(exc)) if isinstance(exc, OSError) else str(exc)
             changed = f"; already changed: {', '.join(landed)}" if landed else ""

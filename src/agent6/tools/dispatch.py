@@ -95,6 +95,38 @@ def _in_container(target: kinds.ExecutionTarget | None) -> bool:
     return target is not None and target.transport == "container"
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class ToolContext:
+    """Run state and dispatcher gates for one built-in tool call."""
+
+    workspace: path_safety.Workspace
+    config: Config
+    extra_protect_paths: tuple[pathlib.Path, ...]
+    built_index: index.SymbolIndex | None
+    symbol_index: Callable[[], index.SymbolIndex]
+    resolved_skills: Callable[[], skills.ResolvedSkills]
+    curator: graph_curator.GraphCurator | None
+    run_root_node_id: str | None
+    children: child_tools.Children | None
+    state_dir: pathlib.Path | None
+    session_dir: pathlib.Path | None
+    session_id: str
+    findings: Callable[[], results.FindingsResult] | None
+    prompts: operator_prompts.OperatorPrompts
+    call_id: int | None
+    metric: directive.MetricSpec | None
+    shells: background.BackgroundShells | None
+    get_background: Callable[[], background.BackgroundShells]
+    background_wait_interrupted: Callable[[], bool]
+    operator_wants_out_now: Callable[[], bool]
+    emit: Callable[[journal.Event], None]
+    approve: Callable[[str], bool]
+    approve_command: Callable[[str, tuple[str, ...]], None]
+    policy_refusal: Callable[[str], str | None]
+    jail_access: Callable[[str], command_tools.JailAccess]
+    run_verify: Callable[[], results.ExecResult]
+
+
 class ToolDispatcher:
     """The tool dispatcher of one execution, or of a bare caller such as a reviewer.
 
@@ -196,50 +228,48 @@ class ToolDispatcher:
             and not _in_container(command_access.session.target)
         ):
             self._emit(journal.JailDegraded(detail=command_access.session.startup_stderr))
-        self._handlers: dict[str, Callable[[dict[str, Any]], results.ToolResult]] = {
+        self._handlers: dict[str, Callable[[ToolContext, dict[str, Any]], results.ToolResult]] = {
             schema.Agent6DocsInput.TOOL_NAME: fs_tools.agent6_docs,
-            schema.ReadFileInput.TOOL_NAME: lambda raw: fs_tools.read_file(self._ws, raw),
-            schema.ListDirInput.TOOL_NAME: lambda raw: fs_tools.list_dir(self._ws, raw),
-            schema.OutlineInput.TOOL_NAME: lambda raw: nav_tools.outline(
-                self._ws, self.symbol_index, raw
+            schema.ReadFileInput.TOOL_NAME: fs_tools.read_file,
+            schema.ListDirInput.TOOL_NAME: fs_tools.list_dir,
+            schema.OutlineInput.TOOL_NAME: lambda ctx, raw: nav_tools.outline(
+                ctx.workspace, ctx.symbol_index, raw
             ),
-            schema.FindDefinitionInput.TOOL_NAME: lambda raw: nav_tools.find_definition(
-                self._ws, self.symbol_index, raw
+            schema.FindDefinitionInput.TOOL_NAME: lambda ctx, raw: nav_tools.find_definition(
+                ctx.workspace, ctx.symbol_index, raw
             ),
-            schema.FindReferencesInput.TOOL_NAME: lambda raw: nav_tools.find_references(
-                self._ws, self.symbol_index, raw
+            schema.FindReferencesInput.TOOL_NAME: lambda ctx, raw: nav_tools.find_references(
+                ctx.workspace, ctx.symbol_index, raw
             ),
-            schema.ApplyEditInput.TOOL_NAME: lambda raw: fs_tools.apply_edit(
-                self._ws, self._config, self.extra_protect_paths, self._index, raw
+            schema.ApplyEditInput.TOOL_NAME: fs_tools.apply_edit,
+            schema.ApplyPatchInput.TOOL_NAME: fs_tools.apply_patch,
+            schema.RunVerifyInput.TOOL_NAME: lambda ctx, raw: self._run_verify(raw),
+            schema.RunCommandInput.TOOL_NAME: lambda ctx, raw: self._run_command(raw),
+            schema.ReadSessionInput.TOOL_NAME: lambda ctx, raw: self._read_session(raw),
+            schema.FetchInput.TOOL_NAME: lambda ctx, raw: self._fetch(raw),
+            schema.ReadBackgroundInput.TOOL_NAME: lambda ctx, raw: self._read_background(raw),
+            schema.StopBackgroundInput.TOOL_NAME: lambda ctx, raw: self._stop_background(raw),
+            schema.RunMetricInput.TOOL_NAME: lambda ctx, raw: self._run_metric(raw),
+            schema.FinishSessionInput.TOOL_NAME: lambda ctx, raw: control_tools.finish_session(raw),
+            schema.FinishPlanningInput.TOOL_NAME: lambda ctx, raw: control_tools.finish_planning(
+                raw
             ),
-            schema.ApplyPatchInput.TOOL_NAME: lambda raw: fs_tools.apply_patch(
-                self._ws, self._config, self.extra_protect_paths, self._index, raw
+            schema.AskUserInput.TOOL_NAME: lambda ctx, raw: self._ask_user(raw),
+            schema.ListFindingsInput.TOOL_NAME: lambda ctx, raw: self._list_findings(raw),
+            schema.ParallelInput.TOOL_NAME: lambda ctx, raw: self._parallel(raw),
+            schema.SteerChildInput.TOOL_NAME: lambda ctx, raw: self._steer_child(raw),
+            schema.MergeChildInput.TOOL_NAME: lambda ctx, raw: self._merge_child(raw),
+            schema.DagAddTaskInput.TOOL_NAME: lambda ctx, raw: dag_tools.add_task(
+                ctx.curator, ctx.run_root_node_id, raw
             ),
-            schema.RunVerifyInput.TOOL_NAME: self._run_verify,
-            schema.RunCommandInput.TOOL_NAME: self._run_command,
-            schema.ReadSessionInput.TOOL_NAME: self._read_session,
-            schema.FetchInput.TOOL_NAME: self._fetch,
-            schema.ReadBackgroundInput.TOOL_NAME: self._read_background,
-            schema.StopBackgroundInput.TOOL_NAME: self._stop_background,
-            schema.RunMetricInput.TOOL_NAME: self._run_metric,
-            schema.FinishSessionInput.TOOL_NAME: control_tools.finish_session,
-            schema.FinishPlanningInput.TOOL_NAME: control_tools.finish_planning,
-            schema.AskUserInput.TOOL_NAME: self._ask_user,
-            schema.ListFindingsInput.TOOL_NAME: self._list_findings,
-            schema.ParallelInput.TOOL_NAME: self._parallel,
-            schema.SteerChildInput.TOOL_NAME: self._steer_child,
-            schema.MergeChildInput.TOOL_NAME: self._merge_child,
-            schema.DagAddTaskInput.TOOL_NAME: lambda raw: dag_tools.add_task(
-                self._curator, self._run_root_node_id, raw
+            schema.DagUpdateTaskInput.TOOL_NAME: lambda ctx, raw: dag_tools.update_task(
+                ctx.curator, raw
             ),
-            schema.DagUpdateTaskInput.TOOL_NAME: lambda raw: dag_tools.update_task(
-                self._curator, raw
+            schema.DagListTasksInput.TOOL_NAME: lambda ctx, raw: dag_tools.list_tasks(
+                ctx.curator, raw
             ),
-            schema.DagListTasksInput.TOOL_NAME: lambda raw: dag_tools.list_tasks(
-                self._curator, raw
-            ),
-            schema.UseSkillInput.TOOL_NAME: lambda raw: skill_tools.use_skill(
-                self._ws, self.resolved_skills, raw
+            schema.UseSkillInput.TOOL_NAME: lambda ctx, raw: skill_tools.use_skill(
+                ctx.workspace, ctx.resolved_skills, raw
             ),
         }
         self._index: index.SymbolIndex | None = None
@@ -516,6 +546,41 @@ class ToolDispatcher:
             raise tool_errors.ToolError(f"not available in {self._mode} mode")
         return self._run_handler(name, raw_input)
 
+    def tool_context(self) -> ToolContext:
+        """Bind a tool call to the current run state.
+
+        Returns:
+            The handler's context. Index and skill lookups stay lazy.
+        """
+        return ToolContext(
+            workspace=self._ws,
+            config=self._config,
+            extra_protect_paths=self.extra_protect_paths,
+            built_index=self._index,
+            symbol_index=self.symbol_index,
+            resolved_skills=self.resolved_skills,
+            curator=self._curator,
+            run_root_node_id=self._run_root_node_id,
+            children=self.children,
+            state_dir=self._state_dir,
+            session_dir=self._session_dir,
+            session_id=self.session_id,
+            findings=self._findings,
+            prompts=self._prompts,
+            call_id=self._gating_call_id(),
+            metric=self.metric,
+            shells=self._shells,
+            get_background=self._background,
+            background_wait_interrupted=self._background_wait_interrupted,
+            operator_wants_out_now=self._operator_wants_out_now,
+            emit=self._emit,
+            approve=self._approve,
+            approve_command=self._approve_command,
+            policy_refusal=self._policy_refusal,
+            jail_access=self._jail_access,
+            run_verify=self.run_verify,
+        )
+
     def _run_handler(self, name: str, raw_input: dict[str, Any]) -> results.ToolResult:
         """Execute the handler, retrying once with stringified JSON arguments coerced.
 
@@ -550,13 +615,13 @@ class ToolDispatcher:
                 " single valid JSON object of arguments."
             )
         try:
-            return self._handlers[name](raw_input)
+            return self._handlers[name](self.tool_context(), raw_input)
         except pydantic.ValidationError as exc:
             coerced = arguments.coerce_stringified_args(raw_input, exc)
             if coerced is None:
                 raise
             try:
-                return self._handlers[name](coerced)
+                return self._handlers[name](self.tool_context(), coerced)
             except pydantic.ValidationError:
                 # The coercion guessed wrong; the original error is the honest one.
                 raise exc from None
