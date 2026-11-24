@@ -13,7 +13,3 @@ Main modules: `server`, `page`, `model`, `actions`, `sse`.
 """
 
 from __future__ import annotations
-
-from agent6.ui.web.server import run_web  # re-export
-
-__all__ = ["run_web"]

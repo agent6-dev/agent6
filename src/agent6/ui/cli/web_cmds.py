@@ -4,7 +4,7 @@
 
 Resolves host and port from config, lets `--host` and `--port` override, resolves the
 sign-in secret (`--secret`, else `AGENT6_WEB_SECRET`, else a minted one), and hands off
-to `web.run_web`.
+to `web_server.run_web`.
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ import pydantic
 from agent6.config import WebConfig, is_loopback_host, layer
 from agent6.sessions import id
 from agent6.ui.cli import common
-from agent6.ui.web import auth, model, run_web
+from agent6.ui.web import auth, model
+from agent6.ui.web import server as web_server
 
 
 def _cmd_web(
@@ -76,6 +77,6 @@ def _cmd_web(
     except auth.WebSecretError as exc:
         common.refuse(str(exc))
         return 2
-    return run_web(
+    return web_server.run_web(
         target, host=eff_host, port=eff_port, secret=web_secret, config_paths=config_paths
     )

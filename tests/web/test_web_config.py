@@ -10,6 +10,7 @@ import pydantic
 import pytest
 
 from agent6.config import Config, WebConfig
+from agent6.ui.web import server as web_server
 
 
 def test_web_defaults_are_loopback() -> None:
@@ -98,7 +99,7 @@ def test_web_resolves_session_and_draft_prefixes(
     saved = paths.state_dir(tmp_path) / "sessions" / bucket / "quiet-run-AAAAAA"
     saved.mkdir(parents=True)
     (saved / "logs.jsonl").write_text('{"type": "session.start"}\n')
-    with mock.patch.object(web_cmds, "run_web", return_value=0) as serve:
+    with mock.patch.object(web_server, "run_web", return_value=0) as serve:
         assert (
             web_cmds._cmd_web(
                 "quiet",
@@ -134,7 +135,7 @@ def test_web_refuses_unknown_and_ambiguous_targets_before_starting_the_server(
         saved.mkdir(parents=True)
         (saved / "logs.jsonl").write_text('{"type": "session.start"}\n')
     (layout.machines_root(state) / "quiet").mkdir(parents=True)
-    with mock.patch.object(web_cmds, "run_web", return_value=0) as serve:
+    with mock.patch.object(web_server, "run_web", return_value=0) as serve:
         assert (
             web_cmds._cmd_web(
                 target, config_paths=(), host=None, port=None, allow_non_loopback=False, secret=None
@@ -157,7 +158,7 @@ def test_web_keeps_the_hub_and_exact_machine_targets(
 
     monkeypatch.chdir(tmp_path)
     (layout.machines_root(paths.state_dir(tmp_path)) / "pipeline").mkdir(parents=True)
-    with mock.patch.object(web_cmds, "run_web", return_value=0) as serve:
+    with mock.patch.object(web_server, "run_web", return_value=0) as serve:
         assert (
             web_cmds._cmd_web(
                 target, config_paths=(), host=None, port=None, allow_non_loopback=False, secret=None
