@@ -8,7 +8,7 @@ import re
 import sys
 from typing import Any
 
-from agent6 import llm_json, review_records
+from agent6 import llm_json, review_records, terminal
 from agent6.harness.review import verdict
 from agent6.providers import provider_types
 
@@ -96,7 +96,7 @@ def print_table(results: Results) -> None:
             categories = collections.Counter(sorted(b.category for b in blocks))
             named = sum(reader_evidence(f"{b.title}\n{b.detail}") is not None for b in blocks)
             print(
-                session,
+                terminal.printable_name(session),
                 arm,
                 _counts(outcomes),
                 _counts(categories),
@@ -120,7 +120,15 @@ def print_table(results: Results) -> None:
             )
             kept += (before & after).total()
             lost += (before - after).total()
-        print(session, f"{compared}/{len(pairs)}", changes, kept, lost, sep="\t", file=sys.stderr)
+        print(
+            terminal.printable_name(session),
+            f"{compared}/{len(pairs)}",
+            changes,
+            kept,
+            lost,
+            sep="\t",
+            file=sys.stderr,
+        )
         comparable_reviews += compared > 0
         changed_reviews += changes > 0
         kept_blocks += kept

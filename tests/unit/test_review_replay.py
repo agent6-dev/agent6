@@ -51,7 +51,8 @@ def test_cli_replays_one_call_per_arm_and_reports_only_comparable_pairs(
 ) -> None:
     """Score the public command using actual provider request bodies but no network."""
     state = tmp_path / "state"
-    for sid in ("alpha", "beta"):
+    second = "beta\tcopy\nrow\x01\u202e"
+    for sid in ("alpha", second):
         env.record_review(state, sid, env.responses_body())
 
     reader = finding("security", "Metadata exposed", "An unauthenticated client can read the row.")
@@ -138,6 +139,7 @@ def test_cli_replays_one_call_per_arm_and_reports_only_comparable_pairs(
         assert row["model"] == "p/selected" and row["requested_effort"] == "high"
     assert [r["repeat"] for r in rows] == [1, 1, 2, 2, 3, 3] * 2
     assert {r["session"] for r in rows[:6]} == {"alpha"}
+    assert {r["session"] for r in rows[6:]} == {second}
     assert [r["outcome"] for r in rows[4:6]] == ["asked for a tool", "block"]
     assert rows[4]["tools_requested"] == ["run_command"]
     assert rows[8]["outcome"] == "invalid reply" and rows[10]["outcome"] == "truncated"
@@ -151,7 +153,9 @@ def test_cli_replays_one_call_per_arm_and_reports_only_comparable_pairs(
     assert "alpha\ttree\tblock=2, pass=1" in table
     assert "data-loss=2, security=2" in table
     assert "compared pairs\tverdict changes\tblocks kept\tblocks lost" in table
-    assert "alpha\t2/3\t1\t1\t3" in table and "beta\t1/3\t0\t0\t0" in table
+    label = json.dumps(second)
+    assert second not in table and f"{label}\trecorded\t" in table and f"{label}\ttree\t" in table
+    assert "alpha\t2/3\t1\t1\t3" in table and f"{label}\t1/3\t0\t0\t0" in table
     assert "Reviews whose verdict changed: 1/2; blocks kept: 1; blocks lost: 3" in table
 
 
