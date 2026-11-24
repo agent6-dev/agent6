@@ -21,8 +21,10 @@ deterministic and needs no API key or network. Driven by web_demo.sh.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -41,6 +43,9 @@ VIEWPORTS: dict[str, ViewportSize] = {
     # mode because it needs the replay-proxy environment (web_machine_demo.sh),
     # not the static seeds web_demo.sh serves.
     "machine": {"width": 1280, "height": 800},
+    # The workflow tour also needs a replay proxy, with one replay per child
+    # (web_workflow_demo.sh).
+    "workflow": {"width": 1280, "height": 800},
 }
 
 # A virtual circle cursor (headless recordings have no OS pointer), a click
@@ -367,6 +372,151 @@ def drive_machine(page: Page, base: str, t0: float) -> float:
     return ready
 
 
+WORKFLOW_TASK = "A test in tests/test_temps.py is failing. Find and fix the bug in temps.py."
+WORKFLOW_STEER = "Keep the change to one line."
+CHILD_ROWS = ".drawer details.card-children .child-row"
+
+
+def start_children(page: Page) -> None:
+    """Type a /parallel task into the hub's composer and start it."""
+    toast(page, "One task, three attempts: /parallel starts a child for each")
+    click(page, ".dock textarea", settle=300)
+    page.keyboard.type(f"/parallel 3 -- {WORKFLOW_TASK}", delay=24)
+    page.wait_for_timeout(1500)
+    click(page, ".dock button.primary", label="Start the run", settle=1200)
+    page.locator(".drawer details.card-children").wait_for(timeout=30000)
+
+
+def watch_children(page: Page) -> None:
+    """Open the run's Children card, then one child's prompt and conversation."""
+    click(page, ".drawer details.card-children > summary", label="Its children, each in a clone")
+    rows = page.locator(CHILD_ROWS)
+    rows.nth(2).wait_for(timeout=30000)
+    page.wait_for_timeout(1200)
+    click(page, rows.nth(0).locator(":scope > summary"), label="Open one: its prompt, its work")
+    rows.nth(0).get_by_role("textbox", name="Message").wait_for(timeout=30000)
+    page.wait_for_timeout(1500)
+
+
+def steer_and_stop(page: Page) -> None:
+    """Message the open child, then stop the third."""
+    rows = page.locator(CHILD_ROWS)
+    message = rows.nth(0).get_by_role("textbox", name="Message")
+    click(page, message, label="Message this child: it reads it at its next turn", settle=300)
+    page.keyboard.type(WORKFLOW_STEER, delay=40)
+    click(page, rows.nth(0).get_by_role("button", name="Send", exact=True), settle=1500)
+    stopped = rows.nth(2)
+    click(page, stopped.locator(":scope > summary"), label="Stop another", settle=700)
+    click(page, stopped.get_by_role("button", name="Stop", exact=True), settle=900)
+    click(page, "dialog[open] button.danger", settle=1200)
+    stopped.locator(":scope > summary", has_text="stopped").wait_for(timeout=30000)
+    page.wait_for_timeout(1200)
+
+
+def switch_sessions(page: Page) -> None:
+    """Ctrl+K to the child that got the message: its conversation shows it read."""
+    child = page.locator(CHILD_ROWS).nth(0).get_by_role("link").first.inner_text()
+    page.keyboard.press("Control+k")
+    toast(page, "Ctrl+K switches session: here, to the child that got the message")
+    page.wait_for_selector("dialog[open] input.field")
+    page.keyboard.type(child[-5:], delay=90)
+    page.wait_for_timeout(900)
+    page.keyboard.press("Enter")
+    page.wait_for_url(f"**/#/session/{child}")
+    # The child reads a queued message at its next turn.
+    page.locator(".conv .ci", has_text=WORKFLOW_STEER).first.wait_for(timeout=60000)
+    toast(page, "The child read the message and kept working")
+    page.wait_for_timeout(2200)
+    scroll_card(page, ".card-conv .conv-box", 4000, wait=1800)
+
+
+def read_review(page: Page) -> None:
+    """Ctrl+K to the seeded reviewed run: its two open findings."""
+    page.keyboard.press("Control+k")
+    page.wait_for_selector("dialog[open] input.field")
+    page.keyboard.type("percentile", delay=90)
+    page.wait_for_timeout(900)
+    page.keyboard.press("Enter")
+    page.wait_for_selector(".card-findings .finding-counts")
+    toast(page, "A reviewed run: its findings stay open until you resolve them")
+    move_to(page, ".card-findings .finding-title")
+    page.wait_for_timeout(2600)
+
+
+def merge_run(page: Page) -> None:
+    """Back on the run its children have ended; merge it into its base branch and see the commit."""
+    page.evaluate("location.hash = '#/'")
+    run = page.locator(".item:not(.child)", has_text=WORKFLOW_TASK)
+    click(page, run.locator("a.title"), label="Back to the run that started them", settle=1200)
+    children = page.locator(".drawer details.card-children > summary")
+    click(page, children, label="Each row follows its child to its end")
+    children.get_by_text("children: 1 merged, 1 ranked, 1 stopped").wait_for(timeout=120000)
+    toast(page, "One merged into the run, one ranked second, one stopped")
+    page.wait_for_timeout(2400)
+    page.evaluate("location.hash = '#/'")
+    merge = run.get_by_role("button", name="Merge", exact=True)
+    click(page, merge, label="Merge the run into its base branch", settle=900)
+    click(page, "dialog[open] button.primary", settle=1500)
+    # The row drops "unmerged" from its status once the merge is recorded.
+    run.locator(".pill", has_text=re.compile("^finished · children ranked$")).wait_for(
+        timeout=30000
+    )
+    click(page, "aside.rail a[data-tab='git']", label="Its commit is on master", settle=1200)
+    page.locator(".gc-row:not(.gc-wt)", has_text="tests/test_temps.py is failing").first.wait_for()
+    page.wait_for_timeout(2400)
+
+
+# The workflow tour's parts in order: each title names a chapter of the recording.
+WORKFLOW_PARTS = (
+    ("Start children", start_children),
+    ("Watch them work", watch_children),
+    ("Steer one, stop one", steer_and_stop),
+    ("Switch sessions", switch_sessions),
+    ("Read a review", read_review),
+    ("Merge", merge_run),
+)
+
+
+def drive_workflow(
+    page: Page, base: str, t0: float, shot: Path | None = None
+) -> tuple[float, list[tuple[str, float]]]:
+    """The workflow tour: a run starts three children; steer one, stop one, switch, review, merge.
+
+    The children are REAL runs replaying the temperature cassette (web_workflow_demo.sh), so
+    their states are waited for, never assumed. Returns the loading head to trim and each
+    part's title with its start, both in seconds since `t0`; a last untitled entry is the end.
+    The first part starts where the trimmed recording does.
+    """
+    page.goto(base, wait_until="networkidle")
+    page.wait_for_selector(".item")
+    page.wait_for_timeout(500)
+    if shot is not None:  # the poster, without the cursor
+        page.evaluate("document.getElementById('__a6_cursor').style.visibility = 'hidden'")
+        page.screenshot(path=str(shot))
+        page.evaluate("document.getElementById('__a6_cursor').style.visibility = ''")
+    ready = time.monotonic() - t0
+    starts = [ready]
+    for _title, stop in WORKFLOW_PARTS:
+        stop(page)
+        starts.append(time.monotonic() - t0)
+    titles = [*(title for title, _stop in WORKFLOW_PARTS), ""]
+    return ready, list(zip(titles, starts, strict=True))
+
+
+def write_chapters(out: Path, parts: list[tuple[str, float]], trim_s: float) -> None:
+    """Write the parts as a WebVTT chapter track; the last entry only ends the part before it."""
+
+    def stamp(seconds: float) -> str:
+        whole, millis = divmod(round(max(seconds - trim_s, 0) * 1000), 1000)
+        return f"{whole // 3600:02d}:{whole // 60 % 60:02d}:{whole % 60:02d}.{millis:03d}"
+
+    cues = [
+        f"{stamp(start)} --> {stamp(end)}\n{title}\n"
+        for (title, start), (_, end) in itertools.pairwise(parts)
+    ]
+    out.write_text("WEBVTT\n\n" + "\n".join(cues), encoding="utf-8")
+
+
 def write_trimmed(raw: Path, out: Path, trim_s: float) -> None:
     """Trim the loading screen and encode BT.709, including recordings with no trim."""
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -420,6 +570,9 @@ def main() -> None:
         t0 = time.monotonic()
         if args.mode == "machine":
             trim_s = drive_machine(page, args.url, t0)
+        elif args.mode == "workflow":
+            trim_s, parts = drive_workflow(page, args.url, t0, args.out.with_suffix(".png"))
+            write_chapters(args.out.with_suffix(".vtt"), parts, trim_s)
         else:
             shot = args.out.parent / "web-shot.png" if args.mode == "desktop" else None
             mode = "desktop" if args.mode == "hero" else args.mode

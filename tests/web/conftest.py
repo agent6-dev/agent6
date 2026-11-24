@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from urllib import parse
 
 import pytest
-from docs.screenshots import seed
+from docs.screenshots import seed, workflow_repo
 
 from tests.web import signin, test_web_browser
 
@@ -63,6 +63,11 @@ def _tour_request(method: str, path: str) -> bool:
 def _blocked_preview_script(text: str, _url: str) -> bool:
     """Chromium reports each script an HTML preview's sandbox refuses as a console error."""
     return text.startswith("Blocked script execution in ")
+
+
+def _live_child_diff(text: str, url: str) -> bool:
+    """A live child's commit is still in its clone, so its view's diff request answers 422."""
+    return "422" in text and "/diff?sha=" in url
 
 
 def _signed_in(
@@ -180,3 +185,46 @@ def tour_page(
     monkeypatch.setenv("AGENT6_DEMO_REPO", str(repo))
     seed.main()
     yield from _signed_in(repo, env, tmp_path, browser, _tour_request, _blocked_preview_script)
+
+
+@pytest.fixture
+def workflow_page(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, browser: Browser
+) -> Iterator[Page]:
+    """Serve the workflow tour's repository with its replay proxy, so the children really run.
+
+    The model answers come from the committed temperature cassette, one replay per child;
+    every request passes, because the tour starts, steers, stops and merges.
+    """
+    screenshots = pathlib.Path(__file__).resolve().parents[2] / "docs" / "screenshots"
+    repo = tmp_path / "repo"
+    env = _homes(tmp_path, monkeypatch) | {"AGENT6_FORCE_STREAM": "1"}
+    monkeypatch.setenv("AGENT6_DEMO_REPO", str(repo))
+    proxy_port = _free_port()
+    workflow_repo.main(proxy_port)
+    proxy = subprocess.Popen(
+        [sys.executable, str(screenshots / "llm_proxy.py")],
+        env={
+            "AGENT6_PROXY_MODE": "replay",
+            "AGENT6_PROXY_CASSETTE": str(screenshots / "seed" / "temps-cassette.jsonl"),
+            "AGENT6_PROXY_PORT": str(proxy_port),
+            "AGENT6_PROXY_PER_CONVERSATION": "1",
+            "AGENT6_PROXY_CHUNK_MS": "100",
+        },
+    )
+    try:
+        yield from _signed_in(
+            repo, env, tmp_path, browser, lambda _method, _path: True, _live_child_diff
+        )
+    finally:
+        # A tour that failed midway leaves its run and children live.
+        agent6 = str(pathlib.Path(sys.executable).with_name("agent6"))
+        subprocess.run(
+            [sys.executable, agent6, "--allow-root", "stop", "--all"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            check=False,
+        )
+        proxy.terminate()
+        proxy.wait(timeout=10)

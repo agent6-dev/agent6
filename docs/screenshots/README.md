@@ -29,6 +29,7 @@ GIF encoding uses its own palette filter.
 - `temps_demo.sh`: records or replays a temperature-conversion fix with `temps_demo.tape`, `seed/temps-repo/` and `seed/temps-cassette.jsonl`.
 - `web_demo.sh`: records seeded desktop and phone web tours, or the web hero source with the `hero` argument, using Playwright; each tour gets its own clone, because it saves a file and commits it.
 - `web_machine_demo.sh`: replays the machine cassette and records the code-fixer machine started and watched from the browser.
+- `web_workflow_demo.sh`: replays the temperature cassette once for each of three children and records the workflow tour: a run that starts them, a message to one, a stop for another, a switch between sessions, a review's findings and the merge.
 
 Supporting files:
 
@@ -40,7 +41,8 @@ Supporting files:
 - `seed.py`: installs the run fixtures into an isolated `$XDG_STATE_HOME/agent6` under the demo repo's id and writes `config.toml` and `ui.toml` with theme `agent6-dark`.
 - `build_fixtures.py`: rebuilds run fixtures from `$XDG_STATE_HOME/agent6/`, trimming token deltas and scrubbing paths; not run in CI.
 - `tui_snapshot.py`: captures a run's dashboard, log or transcript through Textual's headless Pilot as SVG, or PNG with Chromium or `rsvg-convert`; not run in CI.
-- `web_demo.py`: drives the browser tours with Playwright and trims the loading screen from each recording.
+- `web_demo.py`: drives the browser tours with Playwright and trims the loading screen from each recording; the workflow tour also writes its chapter track and poster.
+- `workflow_repo.py`: builds the workflow tour's repository (the stats bundle with the temperature module and its failing test committed on top), installs the seeded sessions and writes the replay config.
 - `llm_proxy.py`: serves recorded LLM responses or forwards live requests to OpenRouter while recording a cassette; with `AGENT6_PROXY_PER_CONVERSATION=1` each conversation replays the cassette from its start, so a run's children each get it.
 - `make_cover.py`: composes the README cover from TUI and web screenshots and a frame from the temperature demo.
 - `sync_theme.py`: copies the terminal palette into each tape's `Set Theme` line.
@@ -54,7 +56,8 @@ Browser recordings need a Playwright-capable Python with Chromium installed; set
 Each test clones `seed/stats-demo.bundle`, installs the sessions with `seed.py`, and signs in to a loopback server with isolated config and state.
 The server inherits no provider keys.
 After sign-in the browser refuses every write except the recorded tour's own: a file save, a stage and a commit.
-No tour starts or resumes a model run.
+No seeded tour starts or resumes a model run.
+The workflow tour's test starts `llm_proxy.py` beside the server, so its run and three children replay the temperature cassette.
 
 ```sh
 uv run pytest -q -n 2 tests/web/test_seeded_tours.py -m browser -rA
@@ -98,6 +101,8 @@ Outputs under `out/` (built by Pages unless marked on demand):
 - `web-desktop.webm`: seeded 1280x800 web tour with captions from `web_demo.sh`.
 - `web-machine.webm`: browser code-fixer machine tour from `web_machine_demo.sh`.
 - `web-phone.webm`: seeded 390x844 web tour with captions from `web_demo.sh`.
+- `web-workflow.vtt`: the workflow tour's chapter track, one cue per part; the docs homepage builds its buttons from it.
+- `web-workflow.webm`: 1280x800 workflow tour with captions from `web_workflow_demo.sh`.
 
 Still images under `out/` (all built by Pages):
 
@@ -110,6 +115,7 @@ Still images under `out/` (all built by Pages):
 - `09-logs.png`: TUI log from `generate.sh`.
 - `cover.png`: 1600x900 README cover from `make_cover.py`.
 - `web-shot.png`: web session screenshot from the desktop tour.
+- `web-workflow.png`: the workflow tour's poster, the hub before the run starts.
 
 The reel records at 1280x720 / Framerate 8. The live dashboard redraws ~5x/s, and at
 full resolution vhs cannot capture that fast (the dashboard records several times too
@@ -130,6 +136,7 @@ bash docs/screenshots/hero_run.sh        # -> hero-src-tui.webm (replay, no key)
 bash docs/screenshots/hero_cli.sh        # -> hero-src-cli.webm (replay, no key)
 WEB_DEMO_PY=… bash docs/screenshots/web_demo.sh       # -> web-desktop.webm + web-phone.webm + web-shot.png
 WEB_DEMO_PY=… bash docs/screenshots/web_machine_demo.sh # -> web-machine.webm
+WEB_DEMO_PY=… bash docs/screenshots/web_workflow_demo.sh # -> web-workflow.webm + .vtt + .png
 WEB_DEMO_PY=… bash docs/screenshots/web_demo.sh hero   # -> hero-src-web.webm
 bash docs/screenshots/hero.sh            # -> hero-{tui,cli,web}.webm + .gif (needs the three sources)
 ```

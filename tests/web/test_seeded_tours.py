@@ -187,3 +187,28 @@ def test_recorded_tour_returns_to_the_hub(
     monkeypatch.setattr(page, "wait_for_timeout", skip_pause)
     web_demo.drive(page, page.url, mode, time.monotonic())
     expect(page.locator(".item")).to_have_count(7)
+
+
+def test_recorded_workflow_tour_ends_merged(
+    workflow_page: Page, web_demo: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every stop in the workflow tour must still exist for a live run and its children."""
+    from playwright.sync_api import expect
+
+    page = workflow_page
+    page.set_viewport_size(web_demo.VIEWPORTS["workflow"])
+    page.add_init_script(web_demo.OVERLAY_INIT_SCRIPT)
+    page.set_default_timeout(5000)
+
+    def skip_pause(_ms: float) -> None:
+        """Skip the pauses for the viewer, not the waits for the run."""
+
+    monkeypatch.setattr(page, "wait_for_timeout", skip_pause)
+    _ready, parts = web_demo.drive_workflow(page, page.url, time.monotonic())
+    assert [title for title, _start in parts] == [
+        *(title for title, _stop in web_demo.WORKFLOW_PARTS),
+        "",
+    ]
+    page.locator("aside.rail a[data-tab='hub']").click()
+    run = page.locator(".item:not(.child)", has_text=web_demo.WORKFLOW_TASK)
+    expect(run.locator(".pill")).to_have_text("finished · children ranked")

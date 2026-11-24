@@ -26,7 +26,13 @@ def web_demo(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 
 @pytest.mark.parametrize(
     ("mode", "width", "height"),
-    [("hero", 1600, 900), ("desktop", 1280, 800), ("phone", 390, 844), ("machine", 1280, 800)],
+    [
+        ("hero", 1600, 900),
+        ("desktop", 1280, 800),
+        ("phone", 390, 844),
+        ("machine", 1280, 800),
+        ("workflow", 1280, 800),
+    ],
 )
 def test_recording_uses_the_mode_viewport(
     web_demo: types.ModuleType,
@@ -36,7 +42,7 @@ def test_recording_uses_the_mode_viewport(
     width: int,
     height: int,
 ) -> None:
-    """The hero records at 16:9 without resizing the desktop, phone or machine tours."""
+    """The hero records at 16:9 without resizing the other tours, and each mode runs its tour."""
     playwright_api = pytest.importorskip("playwright.sync_api")
     monkeypatch.setattr(
         sys,
@@ -60,20 +66,35 @@ def test_recording_uses_the_mode_viewport(
     monkeypatch.setattr(playwright_api, "sync_playwright", lambda: playwright)
     drive = mock.Mock(return_value=0.0)
     drive_machine = mock.Mock(return_value=0.0)
+    drive_workflow = mock.Mock(return_value=(0.0, [("Start", 0.0), ("", 1.0)]))
     monkeypatch.setattr(web_demo, "drive", drive)
     monkeypatch.setattr(web_demo, "drive_machine", drive_machine)
+    monkeypatch.setattr(web_demo, "drive_workflow", drive_workflow)
 
     web_demo.main()
 
     kwargs = browser.new_context.call_args.kwargs
     assert kwargs["viewport"] == {"width": width, "height": height}
     assert kwargs["record_video_size"] == {"width": width, "height": height}
-    if mode == "machine":
-        assert drive_machine.call_count == 1
-        drive.assert_not_called()
-    else:
+    tours = {"machine": drive_machine, "workflow": drive_workflow}
+    ran = tours.get(mode, drive)
+    assert ran.call_count == 1
+    for tour in (drive, drive_machine, drive_workflow):
+        assert tour is ran or not tour.called
+    if ran is drive:
         assert drive.call_args.args[2] == ("desktop" if mode == "hero" else mode)
-        drive_machine.assert_not_called()
+    assert (tmp_path / "out.vtt").exists() == (mode == "workflow")
+
+
+def test_chapter_track_starts_each_part_after_the_trimmed_head(
+    web_demo: types.ModuleType, tmp_path: pathlib.Path
+) -> None:
+    """A chapter that kept the untrimmed clock would seek past its part."""
+    track = tmp_path / "tour.vtt"
+    web_demo.write_chapters(track, [("Start", 1.5), ("Merge", 62.25), ("", 3725.0)], 1.5)
+    assert track.read_text(encoding="utf-8") == (
+        "WEBVTT\n\n00:00:00.000 --> 00:01:00.750\nStart\n\n00:01:00.750 --> 01:02:03.500\nMerge\n"
+    )
 
 
 @pytest.mark.parametrize("trim_s", [0.0, 0.05, 0.25])
