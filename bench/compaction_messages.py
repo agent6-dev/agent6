@@ -13,6 +13,8 @@ import threading
 from collections.abc import Callable, Generator
 from typing import Any, ClassVar
 
+MAX_BODY_BYTES = 8 * 1024 * 1024
+
 SAMPLES = json.loads(
     (
         pathlib.Path(__file__).resolve().parents[1]
@@ -24,6 +26,7 @@ SAMPLES = json.loads(
 class Messages(http.server.BaseHTTPRequestHandler):
     """Check the replay before serving the next captured reply."""
 
+    timeout = 10.0
     idle: ClassVar[bool]
     previous: ClassVar[dict[str, Any]] = {}
     reply: ClassVar[list[dict[str, Any]]] = []
@@ -34,8 +37,27 @@ class Messages(http.server.BaseHTTPRequestHandler):
         self._send({"data": [{"id": "claude-haiku-5-5", "type": "model"}]})
 
     def do_POST(self) -> None:
+        """Read one size-limited Messages request."""
+        lengths = self.headers.get_all("Content-Length")
+        if not lengths:
+            self.send_error(411, "Content-Length is required")
+            return
+        try:
+            (raw,) = lengths
+            raw = raw.strip(" \t")
+            size = int(raw) if raw.isascii() and raw.isdecimal() else -1
+        except ValueError:
+            size = -1
+        if size < 0:
+            self.send_error(400, "Invalid Content-Length")
+            return
+        if size > MAX_BODY_BYTES:
+            self.send_error(413, f"Request exceeds {MAX_BODY_BYTES} bytes")
+            return
+        self._answer(json.loads(self.rfile.read(size)))
+
+    def _answer(self, body: dict[str, Any]) -> None:
         """Accept a summary only for the preceding worker request."""
-        body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         betas = self.headers["anthropic-beta"].split(",")
         messages = body["messages"]
         print(
@@ -98,8 +120,8 @@ def scripted(reply: Callable[[dict[str, Any]], str | tuple[str, dict[str, Any]]]
         def do_GET(self) -> None:
             self._send({"data": [{"id": "claude-sonnet-4-5", "type": "model"}]})
 
-        def do_POST(self) -> None:
-            answer = reply(json.loads(self.rfile.read(int(self.headers["content-length"]))))
+        def _answer(self, body: dict[str, Any]) -> None:
+            answer = reply(body)
             response = copy.deepcopy(SAMPLES["turn3"]["response"])
             if isinstance(answer, str):
                 response.update(content=[{"type": "text", "text": answer}], stop_reason="end_turn")
