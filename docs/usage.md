@@ -67,19 +67,6 @@ It does not replace the required default.
 `agent6 config show` shows each inherited leaf with the default's origin.
 An old worker-only config refuses without migration: rename `[models.worker]` to `[models.default]`.
 
-### Model call actors
-
-A role selects model settings; `actor` tells you who made a call with them.
-The actor is the calling role, optionally followed by `:` and a detail:
-
-- `worker` runs the coding turn; `worker:squash` drafts a squash commit message.
-- `helper:verify_inferer` infers a verification command; `helper:summariser` writes helper summaries and gists.
-- A panel review child calls as `reviewer:<focus>`; a review child with no actor specified calls as `reviewer`.
-- `reviewer:recap` reviews a finished session's record for `agent6 sessions review <id>`.
-
-Read `actor` on `model.*` and `provider.request` journal events and on provider transcripts.
-Inside the recorded request, a message's `role` identifies its speaker, such as `user` or `assistant`.
-
 ## Your first run
 
 ```sh
@@ -102,64 +89,6 @@ It names the effort's config layer and any inheritance; `effort provider default
 For example: `worker chatgpt/gpt-6-astra effort provider default · reviewer chatgpt/gpt-6-astra effort xhigh (repo)`.
 `sessions show` and the web run page read these recorded model facts, not the live config; a resume records its execution's values.
 `sessions show --json` exposes them under `models`; an empty `effort_source` means an older record did not capture effort.
-
-## Tools
-
-`read_file` returns UTF-8 text, a static PNG/JPEG/GIF/WebP image, or a PDF attachment.
-It identifies media by content, not the filename.
-A media read ignores `limit` and refuses a `start_line` other than 1.
-
-- Images: 2 MiB each, at most four and 4 MiB total per turn and outbound request.
-- PDFs: 10 MiB each, at most one per turn and outbound request, counted separately from images.
-- Claude Code also refuses any encoded request line over 8 MiB, including the envelope and notices.
-- Malformed or animated images are refused, not resized or truncated; crop or convert them with an otherwise-permitted jailed command.
-- A provider with unknown media support gets one attempt; a recognized media rejection replaces the attachment with refusal text and retries once without rerunning tools.
-
-Saved sessions retain metadata, not pixels or PDF payloads; resume and fork need a fresh `read_file` to see them again.
-Attachments can disclose credentials in screenshots or documents.
-See [Media retention](security.md#media-retention) for containment and the upstream boundary.
-
-`read_session` without an id lists the project's sessions; `query` searches their visible tasks and entries.
-With an id it returns numbered entries in journal order, such as `#41 12:31 operator: Use the blue label.`
-`query` matches a literal substring regardless of case; `kinds` selects `operator`, `model` or `tool` entries without changing their numbers.
-`start` is the first eligible entry number (default 1); `limit` caps matches and `max_chars` caps their combined text.
-An entry too long to fit on its own ends in `…`; `next_start` gives the first match on the next page, if any.
-For example, `kinds=["tool"]` with `query="pytest"` finds a recorded command with `pytest` in its arguments.
-A child task names its source when recorded; `task` means the author is unknown.
-The report names any skipped records over 1 MiB.
-After compaction the restart notice names the session id when the model can use `read_session`.
-
-## Measure a run
-
-Give one run a score to improve, independent of its verify gate and any standing goal:
-
-```sh
-agent6 run --metric 'minimize -- python3 elapsed.py' "Reduce elapsed time"
-agent6 run --metric "maximize 'score: ([0-9.]+)' target 8 -- python3 bench.py" "Improve the score"
-```
-
-The metric uses UTF-8 text without carriage returns so its command and arguments survive a journal or queue read.
-
-The flag and the live `/metric` directive take the same spec: `maximize|minimize ["capture pattern"] [target NUMBER] -- command`.
-Quote the whole spec on the command line so the shell passes one argument.
-The command is an argument list, not a shell script.
-With a pattern, the first capture group supplies the score; without one, agent6 takes the last printed number from stdout followed by stderr.
-A non-finite result or an incomplete capture with no identifiable last number gives no score.
-The command uses the run's command jail and approval policy, including for automatic readings after committed edits.
-The next turn sees the score and trend.
-
-The optional target is a finite number: `maximize` reaches it at or above that score, `minimize` at or below it.
-Without a target there is no maximum, even if the score line contains `8/8`.
-
-- **Finish:** While more than a quarter of the budget remains, the metric can refuse a finish up to three times.
-  It allows the finish if the best score has reached the target or the remaining budget is unknown.
-- **Plateau:** After at least five parsed readings, a tie with the prior best counts as a plateau.
-  If the best has reached the target, a plateau can end the run at any budget.
-  Otherwise, with at most a quarter of the budget left or an unknown budget, the metric gives three plateau notices before another plateau can end the run.
-
-`/metric` shows the applied setting; `/metric SPEC` replaces it at the next turn boundary and starts a new trend; `/metric off` retires it.
-A resume, including Resume to fix, keeps the last setting; a fork takes the one at the selected checkpoint.
-Children start without a metric.
 
 ## Follow and steer a run
 
@@ -190,6 +119,278 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
   - the run ends `undone` and an unstarted fork in the same checkout continues it (`agent6 resume <fork> --steer "<the message, edited>"`)
   - `resume` and `sessions merge` refuse the undone run and name the fork
   - it is refused while another live run drives the checkout
+
+## Answer a parked prompt
+
+Every front-end answers a prompt by writing one file in the session directory, and so can a script.
+
+- `agent6 answer <id>` lists pending questions and the live approval with their prompts and options.
+- `agent6 answer <id> OPTION` answers the approval with `yes`, `no`, `session` or `session-deny` (session options only when offered).
+  An approval takes priority unless `--question QID` is given.
+- `agent6 answer [--question QID] <id> TEXT...` answers one question set, one TEXT per question.
+  A queued question's answer reaches the run at its next turn, an ended run's at its resume.
+    - `finish_session` polls for queued answers before ending and defers to another model turn if one arrived.
+    - An answer arriving after that poll waits for resume.
+- a question is pending from its prompt until its answer; a waiting one pauses the run while the execution that asked it lives, a queued one or one an earlier execution asked pauses nothing; every surface words it the same way (waiting, queued, asked by an earlier execution, answer saved)
+- an approval reads `<session dir>/approvals/<id>.answer`: `yes`, `no`, `session` or `session-deny` (anything else denies; `session` approves this call, and `session` and `session-deny` also apply to later calls only where the prompt's event says `standing: true`)
+- a question reads `<session dir>/questions/<id>.answer`: a JSON list of answers in the prompt's order
+- the prompt's `id` is in `logs.jsonl` (`approval.prompt`, `question.prompt`); write the file atomically (a sibling, then rename), the run consumes it as soon as it exists
+
+## When a run goes wrong
+
+```sh
+agent6 resume <session-id>           # continue from the last snapshot; --force past a diverged chain or run branch
+agent6 fork <session-id> --at-turn 7 # a new run from turn 7; --steer seeds it, --no-run only creates it
+```
+
+State is snapshotted before each model call and checkpointed per turn.
+
+- `fork` continues a copy of a run from a turn in its own git worktree ([worktrees](#worktrees)); the original run and your checkout stay as they are, and `sessions merge`, `prune` and `remove` treat it like any run ([session state](architecture.md#session-state-on-disk))
+  A plan or ask fork uses the current checkout without edit tools or automatic commits; approved commands can still modify files.
+  `sessions prune` keeps a fork that has not started: its branch, chain ref and worktree stay.
+- `--at-turn 0` on a run that is itself a fork picks the seed it started from, before anything it did; the fork line says so
+- a stopped child continues through its parent's `steer_child`; direct `resume` refuses a child, and `agent6 fork <child-id>` starts independent work at its last commit
+- a run whose manifest cannot be read (a newer agent6 wrote it, or it is broken) refuses `resume`, `fork` and `sessions merge`, naming the cause, and no surface offers them
+- a `run --parallel` run whose budget ended every child reads `failed · budget exhausted` and exits `3`; `agent6 fork <child-id>` starts independent work from a child's commits
+- the first `--steer` on a fork becomes the fork's task and names its row and its merge subject; later steers are continuations
+- a resume with `--steer` keeps the original session label, with the latest steer beneath it as `continued: <steer>`; new questions in an ask REPL are not continuations
+- under the `agent6` and `conventional` squash message styles, a resumed run's merge keeps the task as its subject (`conventional` prefixes it with the type and scope), with `continued: <steer>` in the body
+- a gate withheld after denied or interrupted approval stays withheld only for that execution.
+  When the snapshot records that withholding, a resume with the gate and commands allowed tells the model once that the gate is available again, without claiming it passed
+- after the run's work is merged, a resume continues from the checkout's HEAD if HEAD contains that merge: the run's next commits, `sessions diff` and its next merge then hold only the new work
+- a run whose workspace does not contain the merge (a `--worktree` run, a fork) continues on its own chain: after a resume, `sessions diff`, `sessions commits` and its next merge start from the run's last merged tip
+- a run merged `--into` a branch other than the one it started on keeps its base; another merge into that target starts from the run's last tip merged there
+- `sessions merge` over a file you edited leaves your copy alone and prints two commands that merge your edit with the target version
+- a successful `sessions merge` names the other ended, unmerged runs that changed some of the same paths (`unmerged runs that changed some of the same paths: <id> (src/a.py and 2 more)`)
+  The TUI's and the web's Merge confirm states that line before the merge.
+- a commit you made on the run's `agent6/<id>` branch refuses the resume, which names it: `agent6 sessions merge <id>` merges that commit with the run's work, or `resume --force` continues without it
+- a `sessions merge` that conflicts names `agent6 resume <id> --merge <branch>` for a run with its own worktree: the resume merges the branch into the run's work there and leaves conflict markers for the run to resolve before the next `sessions merge`
+- files you changed between executions follow `[git].dirty_tree` on resume, as uncommitted changes do at a run's start: `ask` asks, `stash` sets them aside (a change under `[sandbox].hide_paths` stays in place), `include` leaves them in place, named to the model before its first call, for the run's next commit to take ([Config](config.md#git))
+  Under `git.control = "model"`, resume names the uncommitted files that still match the run's last stop and leaves committing them to the model.
+  It compares both working and staged contents.
+  For a stop without a staged-tree record, a difference from the recorded commit remains unconfirmed.
+- when `stash` refuses over a file the run also changed, its printed `git restore --source ...` command discards only your edit and keeps the run's last tree; plain `git restore FILE` returns to HEAD, which can remove the run's work
+- a new untracked file is left out of the run's commits as yours, unless the last execution died mid-turn (a kill, a crash): a command of that turn may have written it, so the run keeps it, and the resume names up to four files either way
+
+Every end has one reason and a headline every surface shows; [Exit codes and end reasons](cli.md#exit-codes-and-end-reasons) lists them with the exit codes scripts branch on.
+
+A run whose worker exited without recording an end reads `stale`, for example after SIGKILL or a machine crash.
+`agent6 resume <id>` continues it from its last snapshot, and `agent6 sessions show <id>` prints that command.
+A resumed run opens with the verify fact: the last full verification's command, verdict and tree, and whether the tree changed since; every compaction restart carries the same fact.
+
+## A row's merge note
+
+Every listing row says what stands before a clean merge, derived from the journal on each read and never stored:
+
+- `open findings: 2 block, 1 warn`: the run's open findings by severity; `sessions merge` refuses on an open `block`, and `agent6 sessions findings <id>` lists them
+
+The status beside the note carries the rest: what a waiting run waits on, the gate's word, `unmerged`, and the questions pending or the answers saved for the resume.
+Every listing orders sessions by last activity, newest first.
+`sessions list --json` carries the counts as `open_findings` and the rendered note as `merge_note` ([the row](formats.md#cli-json)).
+
+## Verification
+
+The verify command is the success gate.
+
+- Pin one with `harness.verify.command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.
+- By default the model can run it (`run_verify_command`) and the harness never does: an end that no run of the gate covers reads `unverified` and exits 0.
+  `harness.verify.when = "finish"` makes the harness run it when `finish_session` arrives over an unverified tree, and `"turn"` after every editing turn.
+- With `harness.verify.at_start = true` and `harness.verify.when` set to `"finish"` or `"turn"`, a fresh run runs the gate once before its first turn, so a gate red at the base is known as that.
+- Under `finish` or `turn`, a red gate at finish returns to the model `harness.verify.retries` times, then the run ends red.
+- An unverified run's end guidance counts visible uncommitted changes and new untracked files as work, regardless of Git control or commit policy.
+  Files untracked at start, hidden paths and ignored output stay excluded.
+- The red-gate end block reads the session's first recorded baseline, including earlier executions before a resume: a green base attributes the red gate to this run's edits, a red base says the gate was red there too.
+- A fork starts its own log without the parent's baseline; its base is the commit it forked from.
+- [`[harness]`](config.md#harness) has the inference order and `harness.verify.when`.
+- An inferred `cargo test --quiet` still needs a toolchain and dependencies inside the jail; see [Rust toolchains](security.md#rust-toolchains).
+
+## Session findings
+
+Every agent6 merge path refuses open grounded `block` findings and unreadable review evidence.
+Resolve each blocking finding with a reason before merging, including findings you decide not to fix.
+This rule is separate from `review.block_on`, which decides whether a panel rejects the worker's finish.
+A missing or stale review does not prevent a merge; legacy counts are not reconstructed findings.
+The web [Findings card](web.md#finding-actions-api) offers the same actions and links each finding to its reviewed diff and file version.
+In a run, the worker lists its own findings with the read-only `list_findings` tool; recording a response stays with the commands below.
+
+**Pre-existing line** means the cited line bytes exist at the reviewed base.
+It does not prove that the defect predates the change: a changed caller can break an unchanged callee.
+The tag does not lower severity, close a finding, or exempt a block from the merge guard.
+`sessions findings` prints the mapped base range and attribution commits; `--json` includes each observation's `line_origin` and the latest evidence on each finding.
+File-only citations, unsupported files or base paths, ambiguous mappings, unavailable history, and blobs or patches over 4 MiB have an unknown origin with a reason.
+Historical observations without this evidence remain unknown.
+
+```bash
+agent6 sessions findings <id>                    # open findings and review version
+agent6 sessions findings <id> --all --json        # include resolved findings and action history
+agent6 steer <id> --finding <finding-id>          # submit Fix to a live worker
+agent6 steer <id> --finding <finding-id> --resume # confirm Resume to fix for a stopped run
+agent6 steer <id> --finding A --finding B         # one steer carrying several findings
+agent6 steer <id> --all-findings                  # every open finding without a queued Fix
+agent6 sessions resolve <id> <finding-id> --as fixed --reason "Reproduced and corrected"
+agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
+```
+
+- Resolve accepts `fixed`, `false_positive`, `intentional`, `wont_fix`, `duplicate`, or `pre_existing`.
+  `duplicate` also requires `--duplicate-of <another-finding-id>` in the same session.
+- Resolve and Reopen require a nonblank reason of at most 2,000 characters.
+  `fixed` records the operator's conclusion, not a verification result.
+- Fix builds its instruction from the stored finding and reviewed target, and asks the worker to reproduce the report before changing code.
+  It leaves the finding open, queues behind a steer in flight, and refuses a second Fix of a finding whose Fix is still queued or of unknown delivery.
+- Several findings share one steer: a block per finding under one heading, one result line per finding.
+  `--all-findings` takes every open finding without a queued Fix; the web and TUI Findings card has **Fix all open** for the same.
+- `--resume` confirms the background resume of the same session.
+  - A successful launch reports `run resumed to fix finding <id>`.
+  - `; submission acknowledgement pending` means the worker has not yet recorded taking the instruction.
+    A recorded submission reports the same message without the qualifier.
+  - An unavailable resume reports its failure and does not create a new run.
+- Each action prints its request ID and resulting review version.
+  `--request-id <id>` retries that action without sending it twice; `--expected-version <n>` refuses a stale view instead of using the current version.
+- A live worker applies actions at its steer boundary.
+  An action still waiting after five seconds reports `action queued`; an approval or question wait must end before the boundary is reached.
+- `steer submitted` means a live instruction entered the steer bridge.
+- `Fix: submitted` means the fix instruction was submitted, not that the fix completed or was verified.
+  Run completion, commits, passing verification, and later clean panels do not resolve findings.
+  Resolve records that conclusion with a reason.
+- Fix retries read the journal, not the launch confirmation from the initiating response.
+  Without a recorded submission or failure, a retry reports `delivery unknown` and never launches or sends the instruction again.
+
+## Session receipts
+
+`agent6 sessions receipt <id> [--json]` reads testing, review, cache use and reversal evidence from the journal and manifest.
+It makes no provider call and reruns no checks.
+
+The receipt and the run-end token summary show ordinary worker cache use across the session, including resumed executions but excluding summary attempts, helpers and children.
+`Worker input cache` is cache-read tokens divided by fresh input, cache-read and cache-write tokens together.
+`After compaction` counts the first logical worker call after each history rewrite and its fresh plus cache-write input tokens.
+Several rewrites before one call count once; requested, refused and failed compactions do not count unless they also rewrote history.
+These figures use `model.result`, which records the last attempt's usage, not all retry attempts or a causal estimate of extra cost.
+Calls without input or cache-read counts are excluded, partial coverage is named, and no cache line appears when none report counts.
+Historical journals that recorded an unreported count as zero cannot distinguish it from a reported zero.
+
+Each `Summary attempt` line names its writer, cached and uncached input, outcome and any fallback reason.
+An `endpoint` attempt reports the billed summary iteration.
+When the endpoint drops thinking or clears tool results, the receipt shows the session counts.
+If the worker or endpoint reads less than half its idle summary input from cache, the log and receipt name the limit to shorten.
+This notice appears once per execution and only for reported cache counts.
+`unreported` means the provider supplied no count.
+
+- **Testing:** the receipt includes each [recorded verification attempt](formats.md#verificationevidence).
+  A pass certifies only its unchanged tested tree; a scoped pass covers only the selected tests.
+  An edit after a pass or a command that changes the tree leaves the final tree uncertified.
+  A different commit with the same tree content does not invalidate the observation.
+- **Output:** each journal stream keeps its last 2,000 characters, with truncation marked.
+  Historical or incomplete captures read “capture completeness unknown”.
+- **Missing checks:** denial, inability to execute and interruption are not passes.
+  Baseline failures stay marked separately; a run without a gate says “No verification recorded”.
+  Other commands are not verification evidence.
+- **Review:** the receipt shows recorded panel state and names each reviewer's session.
+- **How to revert:** recorded merge bounds determine the explanation.
+  A squash names its commit on the target; a merge verifies its target parent; a fast-forward lists the merged commits in reverse order.
+  Fast-forwards containing merges need an explicit plan.
+  Missing stamps or objects do not produce guessed commands.
+  “No merge recorded” does not claim that no merge occurred if recording failed.
+
+Git commands in a receipt are explanations only.
+**Ask a run to revert** in the web or TUI opens the new-work composer with a proposed task; inspect it before submitting.
+You can also copy the recorded merge details into a steer request to prepare the reversal.
+The reversal needs its own checks; the original receipt does not certify a merge against a moved target or the later reversal.
+
+## Plan, review, and ask
+
+`/review [TARGET]` works as a first message or a live steer, with no flags.
+`/review` covers staged, unstaged and untracked changes against HEAD; a clean tree answers `no uncommitted changes to review` without calling the model.
+`/review REF` reviews the ref's changes from its merge base with HEAD (`HEAD...REF`).
+`/review A..B` compares the endpoints; `/review A...B` compares their merge base to B.
+The argument always names the reviewed side: use `/review main...HEAD` for the current branch against main, or `/review SHA^..SHA` for one commit (a root commit uses the empty tree).
+
+Start with `agent6 ask "/review main...HEAD"` for a review without edit tools, or `agent6 run "/review feature-x"` to allow fixes too.
+Both modes keep the session's sandbox, approvals and git control, and can run approved checks.
+A clean checkout at the range's head is reviewed in place; otherwise startup prepares a detached worktree at that head under `git.worktree.base_dir`.
+A live session cannot change trees: a request for another tree names the `agent6 ask "/review TARGET"` command to start one.
+A bare run review cannot stash the changes it reviews; use ask or choose `git.dirty_tree = "include"`.
+The first message carries resolved revisions, a diff stat, up to 64 KiB of patch and the base tree's `AGENTS.md` rules.
+With the review panel on (`[review].when` not `never`), the panel sits on the reviewed range as the session starts and records its findings like an in-loop panel: the Findings card, `sessions findings`, Resolve and Fix read them, and the worker's answer follows with the findings in hand.
+Fix needs edit tools: an ask session's findings are read and resolved, and `agent6 run "/review TARGET"` fixes them.
+With the panel off, the answer is the worker's markdown alone.
+
+```sh
+agent6 plan "refactor the config loader"      # no edit tools; run --from <id> executes it
+agent6 plan show <session-id>                 # print the plan
+agent6 plan edit <session-id>                 # open plan.md in $EDITOR (answer its open questions)
+agent6 resume <session-id> --steer "answered" # the planner re-reads and revises
+agent6 sessions review <session-id>           # read-only review of a finished run's record
+agent6 ask "how does the task-graph curator work?"
+```
+
+- `sessions review` reports how the run ended, what went wrong, what you corrected, and candidate memory facts and AGENTS.md lines with their evidence; it touches no repo or memory file (`agent6 memory add` lands a candidate)
+- every `sessions review` is saved under `<state-dir>/reviews/`; the path prints on stderr
+- `ask` runs in any directory; `run` and `plan` need a git repository
+
+In-loop panels run each reviewer as a child with its own session, and record their findings and reviewed tree IDs in the session journal.
+Each batch's reviewers start under what the run has left; batches use at most `review.concurrency` and `harness.parallel.max_children` reviewers, without truncating the roster.
+Results keep roster order even when reviewers finish in another order.
+A reviewer opens on the task, the rules, the verification and the diff, and investigates a clone of the retained snapshot with the tools its run has: the reading tools, and `run_command` with its background commands, `run_verify_command`, `fetch`, `read_session` and `use_skill` where the run's model is offered them.
+A reviewer edits nothing and dispatches nothing; `sandbox.run_commands = "deny"` withholds `run_command` and `run_verify_command` from a reviewer as it does from the run.
+A reviewer takes at most `review.max_turns` turns.
+Each turn tells it which reply it is (`reply 14 of 20`), and the last that it is the last: a tool call in that reply is not run, so the verdict is due then at the latest.
+Each reviewer has a session of its own, listed under its parent rather than as a top-level run.
+The findings card links to the reviewers on its panel.
+A reviewer still running 30 minutes after its batch started is stopped and abstains; batches run one after another, each with its own 30 minutes.
+Failed or unparseable reviewers remain abstentions with their diagnostics; an all-abstain panel is inconclusive, not a clean review.
+Child review does not certify a later or different parent tree.
+Session-owned panels retain a cloneable snapshot of the exact comparison, including uncommitted work after failed verification and with `git.commit_per_turn = false`.
+Snapshotting does not checkpoint the run or move HEAD, the index or visible branches.
+`sessions remove <id>` deletes the session's review snapshot refs, its children's records and its reviewers' records with its record; `sessions remove --asks --yes` does the same for the removed asks, while `sessions prune` leaves review snapshots alone.
+The snapshot certifies only its recorded trees and path coverage, not later parent edits.
+Under `git.control = "model"` a panel compares the base recorded at the start with the checkout's HEAD and its uncommitted edits, since the model's commits are the record.
+An exact repeat on the same cited blob keeps its finding ID across rounds and resumes.
+The worker receives each finding once unless the feedback notice cut it.
+A later pass, a skipped panel, or the rejection cap does not erase recorded findings.
+A panel asked to review trees a complete panel already reviewed with the same paths and reviewers is not sat again: the journal records `review.reused` naming that panel, whose findings stand, and the worker hears that nothing new was raised.
+`agent6 attach --json` includes structured review evidence, open counts, action history and completion state.
+
+### Code-review rules
+
+Write review rules in `AGENTS.md`.
+Code reviews read `AGENTS.md` from the reviewed base tree, from the repository root through the working directory.
+A head-side edit or deletion does not change the rules supplied to that review.
+Rule-file changes remain in the reviewed diff unless the selected paths exclude them.
+
+Missing files are optional.
+An unborn repository has no base rules.
+A present rule file that is hidden, unreadable, non-text, or not a regular file makes the review incomplete with a named reason.
+The combined rule text must fit within 64 KiB of UTF-8 bytes; an oversized set refuses the review rather than supplying a prefix.
+Reduce the base-tree rule files to proceed.
+
+The review journal records each supplied path, blob ID and byte count once at panel start.
+These rules apply to the in-loop panel, not to `sessions review` or the worker's own `AGENTS.md` loading.
+
+## Worktrees
+
+`run --worktree`, a run-mode fork, each `--parallel` child and a run-mode machine state work in a worktree of their own.
+
+- `[git.worktree].kind` chooses the worktree of a fork and a `--worktree` run: `clone` (the default), a clone of the repository whose commits agent6 copies into the repository as the run makes them, or `linked`, a linked git worktree; a child, a reviewer and a machine state work in a clone.
+- It starts with the repository's tracked files at the commit it was cut from: no uncommitted change, and nothing git does not track (`.venv`, `node_modules`, a build directory).
+- `[git.worktree].setup_command` builds what is missing; it runs once in each new worktree, before the first turn:
+
+    ```sh
+    agent6 config set --repo git.worktree.setup_command '["uv", "sync"]'
+    ```
+
+- Unset, a `## Setup command` fenced block in AGENTS.md supplies it; a `--worktree` run and a child read it from the commit the worktree is cut from, not from an uncommitted edit, and print the command and that AGENTS.md gave it.
+    - an AGENTS.md that is a symlink is not read there: set `git.worktree.setup_command`
+- The command runs in the run's own sandbox, under the isolation, network and grants of every command of that run; with no route out it has to work offline ([the offline recipe](security.md#4-commands-and-environment)).
+- Machine clones follow the [state setup and failure rules](state-machines.md#agent) and [setup approval policy](security.md#4-commands-and-environment).
+- For run, fork and child sessions, the command and output tail are printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any turn (exit `1`).
+    - A fork's unread steer survives the setup failure and reaches the worker on a bare resume.
+  For a run or child, no turn ran, so `agent6 resume` has nothing to continue: start the run again once the command works.
+- A run prints a child's failed setup command and its output when it imports the child; `agent6 sessions show <id>` keeps the command, and a failed setup's output, after the worktree is gone.
+- The files it leaves untracked stay out of the run's commits.
+- The verify gate is settled in your checkout and carried into the workspace: a gate inferred as `.venv/bin/python -m pytest -q` stays that.
+- A gate whose first word is a path git does not track, with no setup command, refuses `run --worktree`, `fork` and `run --parallel` before anything is created; the refusal names the path, the config line and the AGENTS.md block.
+
+## Children
 
 ### Parallel directive
 
@@ -285,32 +486,6 @@ Every background wait uses the shorter of `wait_s` and [`harness.command_checkin
 With an id, an omitted `wait_s` uses the check-in interval; without an id, it returns the roster at once.
 When the check-in ends a wait, `output` names the interval.
 
-**Who compacts.** The threshold line at startup names `agent6` or `endpoint`.
-With [Anthropic server compaction](anthropic.md), the endpoint clears old tool output and writes a signed summary.
-The size settings, `/compact [focus]` and idle limits still apply.
-The summary writer, gists and history retention settings apply only when agent6 compacts by itself.
-
-**What a local summary restart keeps.** `compaction.keep_operator_messages` reserves the newest task, steers and answers word for word.
-`compaction.keep_recent_turns` keeps an unbroken run of recent replies with their inputs and tool results.
-Both counts default to `-1` (no count limit).
-Set either to `0` to reserve no messages or keep no optional turns, respectively.
-A kept turn still includes the operator text it received.
-Older reserved messages appear in time order before the pins and summary, including answers without their tool calls.
-The opening task has no special place.
-
-`compaction.keep_recent_chars` caps the two together (default `80000`); `agent6 config show` gives the effective cap for the worker.
-After reserving the operator's words, the newest eligible turn stays whole even if it exceeds the space left.
-At `0`, only work the worker has yet to read or finish survives beside the restart notice.
-`compaction.keep_thinking_turns` limits how many recent replies keep their thinking when a local drop rewrites tool results or a summary restarts the conversation.
-
-**Compact before the prompt cache expires.** Set `providers.<name>.idle_compact_s` below the cache lifetime of your endpoint.
-The timer starts when the worker starts its model request.
-It can compact during a blocking command, a background wait, an approval, a question or an interactive run parked for a message.
-The whole context must exceed `providers.<name>.idle_compact_min_chars` (default `240000`).
-The summary does not end the wait or add a worker turn.
-Set the limit to `0` to turn it off.
-See the [provider defaults](config.md#providersname).
-
 `steer_child` (`id`, `text`), offered with the `parallel` tool, sends a running child an instruction or continues a stopped child and returns at once.
 A stopped child continues the same conversation in its retained clone, under the parent's remaining budget and approval policy, with the text as its next instruction.
 Its finished work follows the same merge policy as a new child's work.
@@ -355,275 +530,104 @@ While a steer waits on disk, `sessions show`, the TUI header and the web session
 Steers sent while one waits queue in order, one per subsequent step; `abort`, `exit`, `/undo` and `detach` take the slot at once.
 The pending label clears when the worker consumes the last steer.
 
-## Answer a parked prompt
+## Compaction
 
-Every front-end answers a prompt by writing one file in the session directory, and so can a script.
+**Who compacts.** The threshold line at startup names `agent6` or `endpoint`.
+With [Anthropic server compaction](anthropic.md), the endpoint clears old tool output and writes a signed summary.
+The size settings, `/compact [focus]` and idle limits still apply.
+The summary writer, gists and history retention settings apply only when agent6 compacts by itself.
 
-- `agent6 answer <id>` lists pending questions and the live approval with their prompts and options.
-- `agent6 answer <id> OPTION` answers the approval with `yes`, `no`, `session` or `session-deny` (session options only when offered).
-  An approval takes priority unless `--question QID` is given.
-- `agent6 answer [--question QID] <id> TEXT...` answers one question set, one TEXT per question.
-  A queued question's answer reaches the run at its next turn, an ended run's at its resume.
-    - `finish_session` polls for queued answers before ending and defers to another model turn if one arrived.
-    - An answer arriving after that poll waits for resume.
-- a question is pending from its prompt until its answer; a waiting one pauses the run while the execution that asked it lives, a queued one or one an earlier execution asked pauses nothing; every surface words it the same way (waiting, queued, asked by an earlier execution, answer saved)
-- an approval reads `<session dir>/approvals/<id>.answer`: `yes`, `no`, `session` or `session-deny` (anything else denies; `session` approves this call, and `session` and `session-deny` also apply to later calls only where the prompt's event says `standing: true`)
-- a question reads `<session dir>/questions/<id>.answer`: a JSON list of answers in the prompt's order
-- the prompt's `id` is in `logs.jsonl` (`approval.prompt`, `question.prompt`); write the file atomically (a sibling, then rename), the run consumes it as soon as it exists
+**What a local summary restart keeps.** `compaction.keep_operator_messages` reserves the newest task, steers and answers word for word.
+`compaction.keep_recent_turns` keeps an unbroken run of recent replies with their inputs and tool results.
+Both counts default to `-1` (no count limit).
+Set either to `0` to reserve no messages or keep no optional turns, respectively.
+A kept turn still includes the operator text it received.
+Older reserved messages appear in time order before the pins and summary, including answers without their tool calls.
+The opening task has no special place.
 
-## When a run goes wrong
+`compaction.keep_recent_chars` caps the two together (default `80000`); `agent6 config show` gives the effective cap for the worker.
+After reserving the operator's words, the newest eligible turn stays whole even if it exceeds the space left.
+At `0`, only work the worker has yet to read or finish survives beside the restart notice.
+`compaction.keep_thinking_turns` limits how many recent replies keep their thinking when a local drop rewrites tool results or a summary restarts the conversation.
 
-```sh
-agent6 resume <session-id>           # continue from the last snapshot; --force past a diverged chain or run branch
-agent6 fork <session-id> --at-turn 7 # a new run from turn 7; --steer seeds it, --no-run only creates it
-```
+**Compact before the prompt cache expires.** Set `providers.<name>.idle_compact_s` below the cache lifetime of your endpoint.
+The timer starts when the worker starts its model request.
+It can compact during a blocking command, a background wait, an approval, a question or an interactive run parked for a message.
+The whole context must exceed `providers.<name>.idle_compact_min_chars` (default `240000`).
+The summary does not end the wait or add a worker turn.
+Set the limit to `0` to turn it off.
+See the [provider defaults](config.md#providersname).
 
-State is snapshotted before each model call and checkpointed per turn.
+## Measure a run
 
-- `fork` continues a copy of a run from a turn in its own git worktree ([worktrees](#worktrees)); the original run and your checkout stay as they are, and `sessions merge`, `prune` and `remove` treat it like any run ([session state](architecture.md#session-state-on-disk))
-  A plan or ask fork uses the current checkout without edit tools or automatic commits; approved commands can still modify files.
-  `sessions prune` keeps a fork that has not started: its branch, chain ref and worktree stay.
-- `--at-turn 0` on a run that is itself a fork picks the seed it started from, before anything it did; the fork line says so
-- a stopped child continues through its parent's `steer_child`; direct `resume` refuses a child, and `agent6 fork <child-id>` starts independent work at its last commit
-- a run whose manifest cannot be read (a newer agent6 wrote it, or it is broken) refuses `resume`, `fork` and `sessions merge`, naming the cause, and no surface offers them
-- a `run --parallel` run whose budget ended every child reads `failed · budget exhausted` and exits `3`; `agent6 fork <child-id>` starts independent work from a child's commits
-- the first `--steer` on a fork becomes the fork's task and names its row and its merge subject; later steers are continuations
-- a resume with `--steer` keeps the original session label, with the latest steer beneath it as `continued: <steer>`; new questions in an ask REPL are not continuations
-- under the `agent6` and `conventional` squash message styles, a resumed run's merge keeps the task as its subject (`conventional` prefixes it with the type and scope), with `continued: <steer>` in the body
-- a gate withheld after denied or interrupted approval stays withheld only for that execution.
-  When the snapshot records that withholding, a resume with the gate and commands allowed tells the model once that the gate is available again, without claiming it passed
-- after the run's work is merged, a resume continues from the checkout's HEAD if HEAD contains that merge: the run's next commits, `sessions diff` and its next merge then hold only the new work
-- a run whose workspace does not contain the merge (a `--worktree` run, a fork) continues on its own chain: after a resume, `sessions diff`, `sessions commits` and its next merge start from the run's last merged tip
-- a run merged `--into` a branch other than the one it started on keeps its base; another merge into that target starts from the run's last tip merged there
-- `sessions merge` over a file you edited leaves your copy alone and prints two commands that merge your edit with the target version
-- a successful `sessions merge` names the other ended, unmerged runs that changed some of the same paths (`unmerged runs that changed some of the same paths: <id> (src/a.py and 2 more)`)
-  The TUI's and the web's Merge confirm states that line before the merge.
-- a commit you made on the run's `agent6/<id>` branch refuses the resume, which names it: `agent6 sessions merge <id>` merges that commit with the run's work, or `resume --force` continues without it
-- a `sessions merge` that conflicts names `agent6 resume <id> --merge <branch>` for a run with its own worktree: the resume merges the branch into the run's work there and leaves conflict markers for the run to resolve before the next `sessions merge`
-- files you changed between executions follow `[git].dirty_tree` on resume, as uncommitted changes do at a run's start: `ask` asks, `stash` sets them aside (a change under `[sandbox].hide_paths` stays in place), `include` leaves them in place, named to the model before its first call, for the run's next commit to take ([Config](config.md#git))
-  Under `git.control = "model"`, resume names the uncommitted files that still match the run's last stop and leaves committing them to the model.
-  It compares both working and staged contents.
-  For a stop without a staged-tree record, a difference from the recorded commit remains unconfirmed.
-- when `stash` refuses over a file the run also changed, its printed `git restore --source ...` command discards only your edit and keeps the run's last tree; plain `git restore FILE` returns to HEAD, which can remove the run's work
-- a new untracked file is left out of the run's commits as yours, unless the last execution died mid-turn (a kill, a crash): a command of that turn may have written it, so the run keeps it, and the resume names up to four files either way
-
-Every end has one reason and a headline every surface shows; [Exit codes and end reasons](cli.md#exit-codes-and-end-reasons) lists them with the exit codes scripts branch on.
-
-A run whose worker exited without recording an end reads `stale`, for example after SIGKILL or a machine crash.
-`agent6 resume <id>` continues it from its last snapshot, and `agent6 sessions show <id>` prints that command.
-A resumed run opens with the verify fact: the last full verification's command, verdict and tree, and whether the tree changed since; every compaction restart carries the same fact.
-
-## Plan, review, and ask
-
-`/review [TARGET]` works as a first message or a live steer, with no flags.
-`/review` covers staged, unstaged and untracked changes against HEAD; a clean tree answers `no uncommitted changes to review` without calling the model.
-`/review REF` reviews the ref's changes from its merge base with HEAD (`HEAD...REF`).
-`/review A..B` compares the endpoints; `/review A...B` compares their merge base to B.
-The argument always names the reviewed side: use `/review main...HEAD` for the current branch against main, or `/review SHA^..SHA` for one commit (a root commit uses the empty tree).
-
-Start with `agent6 ask "/review main...HEAD"` for a review without edit tools, or `agent6 run "/review feature-x"` to allow fixes too.
-Both modes keep the session's sandbox, approvals and git control, and can run approved checks.
-A clean checkout at the range's head is reviewed in place; otherwise startup prepares a detached worktree at that head under `git.worktree.base_dir`.
-A live session cannot change trees: a request for another tree names the `agent6 ask "/review TARGET"` command to start one.
-A bare run review cannot stash the changes it reviews; use ask or choose `git.dirty_tree = "include"`.
-The first message carries resolved revisions, a diff stat, up to 64 KiB of patch and the base tree's `AGENTS.md` rules.
-With the review panel on (`[review].when` not `never`), the panel sits on the reviewed range as the session starts and records its findings like an in-loop panel: the Findings card, `sessions findings`, Resolve and Fix read them, and the worker's answer follows with the findings in hand.
-Fix needs edit tools: an ask session's findings are read and resolved, and `agent6 run "/review TARGET"` fixes them.
-With the panel off, the answer is the worker's markdown alone.
+Give one run a score to improve, independent of its verify gate and any standing goal:
 
 ```sh
-agent6 plan "refactor the config loader"      # no edit tools; run --from <id> executes it
-agent6 plan show <session-id>                 # print the plan
-agent6 plan edit <session-id>                 # open plan.md in $EDITOR (answer its open questions)
-agent6 resume <session-id> --steer "answered" # the planner re-reads and revises
-agent6 sessions review <session-id>           # read-only review of a finished run's record
-agent6 ask "how does the task-graph curator work?"
+agent6 run --metric 'minimize -- python3 elapsed.py' "Reduce elapsed time"
+agent6 run --metric "maximize 'score: ([0-9.]+)' target 8 -- python3 bench.py" "Improve the score"
 ```
 
-- `sessions review` reports how the run ended, what went wrong, what you corrected, and candidate memory facts and AGENTS.md lines with their evidence; it touches no repo or memory file (`agent6 memory add` lands a candidate)
-- every `sessions review` is saved under `<state-dir>/reviews/`; the path prints on stderr
-- `ask` runs in any directory; `run` and `plan` need a git repository
+The metric uses UTF-8 text without carriage returns so its command and arguments survive a journal or queue read.
 
-In-loop panels run each reviewer as a child with its own session, and record their findings and reviewed tree IDs in the session journal.
-Each batch's reviewers start under what the run has left; batches use at most `review.concurrency` and `harness.parallel.max_children` reviewers, without truncating the roster.
-Results keep roster order even when reviewers finish in another order.
-A reviewer opens on the task, the rules, the verification and the diff, and investigates a clone of the retained snapshot with the tools its run has: the reading tools, and `run_command` with its background commands, `run_verify_command`, `fetch`, `read_session` and `use_skill` where the run's model is offered them.
-A reviewer edits nothing and dispatches nothing; `sandbox.run_commands = "deny"` withholds `run_command` and `run_verify_command` from a reviewer as it does from the run.
-A reviewer takes at most `review.max_turns` turns.
-Each turn tells it which reply it is (`reply 14 of 20`), and the last that it is the last: a tool call in that reply is not run, so the verdict is due then at the latest.
-Each reviewer has a session of its own, listed under its parent rather than as a top-level run.
-The findings card links to the reviewers on its panel.
-A reviewer still running 30 minutes after its batch started is stopped and abstains; batches run one after another, each with its own 30 minutes.
-Failed or unparseable reviewers remain abstentions with their diagnostics; an all-abstain panel is inconclusive, not a clean review.
-Child review does not certify a later or different parent tree.
-Session-owned panels retain a cloneable snapshot of the exact comparison, including uncommitted work after failed verification and with `git.commit_per_turn = false`.
-Snapshotting does not checkpoint the run or move HEAD, the index or visible branches.
-`sessions remove <id>` deletes the session's review snapshot refs, its children's records and its reviewers' records with its record; `sessions remove --asks --yes` does the same for the removed asks, while `sessions prune` leaves review snapshots alone.
-The snapshot certifies only its recorded trees and path coverage, not later parent edits.
-Under `git.control = "model"` a panel compares the base recorded at the start with the checkout's HEAD and its uncommitted edits, since the model's commits are the record.
-An exact repeat on the same cited blob keeps its finding ID across rounds and resumes.
-The worker receives each finding once unless the feedback notice cut it.
-A later pass, a skipped panel, or the rejection cap does not erase recorded findings.
-A panel asked to review trees a complete panel already reviewed with the same paths and reviewers is not sat again: the journal records `review.reused` naming that panel, whose findings stand, and the worker hears that nothing new was raised.
-`agent6 attach --json` includes structured review evidence, open counts, action history and completion state.
+The flag and the live `/metric` directive take the same spec: `maximize|minimize ["capture pattern"] [target NUMBER] -- command`.
+Quote the whole spec on the command line so the shell passes one argument.
+The command is an argument list, not a shell script.
+With a pattern, the first capture group supplies the score; without one, agent6 takes the last printed number from stdout followed by stderr.
+A non-finite result or an incomplete capture with no identifiable last number gives no score.
+The command uses the run's command jail and approval policy, including for automatic readings after committed edits.
+The next turn sees the score and trend.
 
-### Code-review rules
+The optional target is a finite number: `maximize` reaches it at or above that score, `minimize` at or below it.
+Without a target there is no maximum, even if the score line contains `8/8`.
 
-Write review rules in `AGENTS.md`.
-Code reviews read `AGENTS.md` from the reviewed base tree, from the repository root through the working directory.
-A head-side edit or deletion does not change the rules supplied to that review.
-Rule-file changes remain in the reviewed diff unless the selected paths exclude them.
+- **Finish:** While more than a quarter of the budget remains, the metric can refuse a finish up to three times.
+  It allows the finish if the best score has reached the target or the remaining budget is unknown.
+- **Plateau:** After at least five parsed readings, a tie with the prior best counts as a plateau.
+  If the best has reached the target, a plateau can end the run at any budget.
+  Otherwise, with at most a quarter of the budget left or an unknown budget, the metric gives three plateau notices before another plateau can end the run.
 
-Missing files are optional.
-An unborn repository has no base rules.
-A present rule file that is hidden, unreadable, non-text, or not a regular file makes the review incomplete with a named reason.
-The combined rule text must fit within 64 KiB of UTF-8 bytes; an oversized set refuses the review rather than supplying a prefix.
-Reduce the base-tree rule files to proceed.
+`/metric` shows the applied setting; `/metric SPEC` replaces it at the next turn boundary and starts a new trend; `/metric off` retires it.
+A resume, including Resume to fix, keeps the last setting; a fork takes the one at the selected checkpoint.
+Children start without a metric.
 
-The review journal records each supplied path, blob ID and byte count once at panel start.
-These rules apply to the in-loop panel, not to `sessions review` or the worker's own `AGENTS.md` loading.
+## Tools
 
-## Session findings
+`read_file` returns UTF-8 text, a static PNG/JPEG/GIF/WebP image, or a PDF attachment.
+It identifies media by content, not the filename.
+A media read ignores `limit` and refuses a `start_line` other than 1.
 
-Every agent6 merge path refuses open grounded `block` findings and unreadable review evidence.
-Resolve each blocking finding with a reason before merging, including findings you decide not to fix.
-This rule is separate from `review.block_on`, which decides whether a panel rejects the worker's finish.
-A missing or stale review does not prevent a merge; legacy counts are not reconstructed findings.
-The web [Findings card](web.md#finding-actions-api) offers the same actions and links each finding to its reviewed diff and file version.
-In a run, the worker lists its own findings with the read-only `list_findings` tool; recording a response stays with the commands below.
+- Images: 2 MiB each, at most four and 4 MiB total per turn and outbound request.
+- PDFs: 10 MiB each, at most one per turn and outbound request, counted separately from images.
+- Claude Code also refuses any encoded request line over 8 MiB, including the envelope and notices.
+- Malformed or animated images are refused, not resized or truncated; crop or convert them with an otherwise-permitted jailed command.
+- A provider with unknown media support gets one attempt; a recognized media rejection replaces the attachment with refusal text and retries once without rerunning tools.
 
-**Pre-existing line** means the cited line bytes exist at the reviewed base.
-It does not prove that the defect predates the change: a changed caller can break an unchanged callee.
-The tag does not lower severity, close a finding, or exempt a block from the merge guard.
-`sessions findings` prints the mapped base range and attribution commits; `--json` includes each observation's `line_origin` and the latest evidence on each finding.
-File-only citations, unsupported files or base paths, ambiguous mappings, unavailable history, and blobs or patches over 4 MiB have an unknown origin with a reason.
-Historical observations without this evidence remain unknown.
+Saved sessions retain metadata, not pixels or PDF payloads; resume and fork need a fresh `read_file` to see them again.
+Attachments can disclose credentials in screenshots or documents.
+See [Media retention](security.md#media-retention) for containment and the upstream boundary.
 
-```bash
-agent6 sessions findings <id>                    # open findings and review version
-agent6 sessions findings <id> --all --json        # include resolved findings and action history
-agent6 steer <id> --finding <finding-id>          # submit Fix to a live worker
-agent6 steer <id> --finding <finding-id> --resume # confirm Resume to fix for a stopped run
-agent6 steer <id> --finding A --finding B         # one steer carrying several findings
-agent6 steer <id> --all-findings                  # every open finding without a queued Fix
-agent6 sessions resolve <id> <finding-id> --as fixed --reason "Reproduced and corrected"
-agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
-```
+`read_session` without an id lists the project's sessions; `query` searches their visible tasks and entries.
+With an id it returns numbered entries in journal order, such as `#41 12:31 operator: Use the blue label.`
+`query` matches a literal substring regardless of case; `kinds` selects `operator`, `model` or `tool` entries without changing their numbers.
+`start` is the first eligible entry number (default 1); `limit` caps matches and `max_chars` caps their combined text.
+An entry too long to fit on its own ends in `…`; `next_start` gives the first match on the next page, if any.
+For example, `kinds=["tool"]` with `query="pytest"` finds a recorded command with `pytest` in its arguments.
+A child task names its source when recorded; `task` means the author is unknown.
+The report names any skipped records over 1 MiB.
+After compaction the restart notice names the session id when the model can use `read_session`.
 
-- Resolve accepts `fixed`, `false_positive`, `intentional`, `wont_fix`, `duplicate`, or `pre_existing`.
-  `duplicate` also requires `--duplicate-of <another-finding-id>` in the same session.
-- Resolve and Reopen require a nonblank reason of at most 2,000 characters.
-  `fixed` records the operator's conclusion, not a verification result.
-- Fix builds its instruction from the stored finding and reviewed target, and asks the worker to reproduce the report before changing code.
-  It leaves the finding open, queues behind a steer in flight, and refuses a second Fix of a finding whose Fix is still queued or of unknown delivery.
-- Several findings share one steer: a block per finding under one heading, one result line per finding.
-  `--all-findings` takes every open finding without a queued Fix; the web and TUI Findings card has **Fix all open** for the same.
-- `--resume` confirms the background resume of the same session.
-  - A successful launch reports `run resumed to fix finding <id>`.
-  - `; submission acknowledgement pending` means the worker has not yet recorded taking the instruction.
-    A recorded submission reports the same message without the qualifier.
-  - An unavailable resume reports its failure and does not create a new run.
-- Each action prints its request ID and resulting review version.
-  `--request-id <id>` retries that action without sending it twice; `--expected-version <n>` refuses a stale view instead of using the current version.
-- A live worker applies actions at its steer boundary.
-  An action still waiting after five seconds reports `action queued`; an approval or question wait must end before the boundary is reached.
-- `steer submitted` means a live instruction entered the steer bridge.
-- `Fix: submitted` means the fix instruction was submitted, not that the fix completed or was verified.
-  Run completion, commits, passing verification, and later clean panels do not resolve findings.
-  Resolve records that conclusion with a reason.
-- Fix retries read the journal, not the launch confirmation from the initiating response.
-  Without a recorded submission or failure, a retry reports `delivery unknown` and never launches or sends the instruction again.
+## Model call actors
 
-## A row's merge note
+A role selects model settings; `actor` tells you who made a call with them.
+The actor is the calling role, optionally followed by `:` and a detail:
 
-Every listing row says what stands before a clean merge, derived from the journal on each read and never stored:
+- `worker` runs the coding turn; `worker:squash` drafts a squash commit message.
+- `helper:verify_inferer` infers a verification command; `helper:summariser` writes helper summaries and gists.
+- A panel review child calls as `reviewer:<focus>`; a review child with no actor specified calls as `reviewer`.
+- `reviewer:recap` reviews a finished session's record for `agent6 sessions review <id>`.
 
-- `open findings: 2 block, 1 warn`: the run's open findings by severity; `sessions merge` refuses on an open `block`, and `agent6 sessions findings <id>` lists them
-
-The status beside the note carries the rest: what a waiting run waits on, the gate's word, `unmerged`, and the questions pending or the answers saved for the resume.
-Every listing orders sessions by last activity, newest first.
-`sessions list --json` carries the counts as `open_findings` and the rendered note as `merge_note` ([the row](formats.md#cli-json)).
-
-## Session receipts
-
-`agent6 sessions receipt <id> [--json]` reads testing, review, cache use and reversal evidence from the journal and manifest.
-It makes no provider call and reruns no checks.
-
-The receipt and the run-end token summary show ordinary worker cache use across the session, including resumed executions but excluding summary attempts, helpers and children.
-`Worker input cache` is cache-read tokens divided by fresh input, cache-read and cache-write tokens together.
-`After compaction` counts the first logical worker call after each history rewrite and its fresh plus cache-write input tokens.
-Several rewrites before one call count once; requested, refused and failed compactions do not count unless they also rewrote history.
-These figures use `model.result`, which records the last attempt's usage, not all retry attempts or a causal estimate of extra cost.
-Calls without input or cache-read counts are excluded, partial coverage is named, and no cache line appears when none report counts.
-Historical journals that recorded an unreported count as zero cannot distinguish it from a reported zero.
-
-Each `Summary attempt` line names its writer, cached and uncached input, outcome and any fallback reason.
-An `endpoint` attempt reports the billed summary iteration.
-When the endpoint drops thinking or clears tool results, the receipt shows the session counts.
-If the worker or endpoint reads less than half its idle summary input from cache, the log and receipt name the limit to shorten.
-This notice appears once per execution and only for reported cache counts.
-`unreported` means the provider supplied no count.
-
-- **Testing:** the receipt includes each [recorded verification attempt](formats.md#verificationevidence).
-  A pass certifies only its unchanged tested tree; a scoped pass covers only the selected tests.
-  An edit after a pass or a command that changes the tree leaves the final tree uncertified.
-  A different commit with the same tree content does not invalidate the observation.
-- **Output:** each journal stream keeps its last 2,000 characters, with truncation marked.
-  Historical or incomplete captures read “capture completeness unknown”.
-- **Missing checks:** denial, inability to execute and interruption are not passes.
-  Baseline failures stay marked separately; a run without a gate says “No verification recorded”.
-  Other commands are not verification evidence.
-- **Review:** the receipt shows recorded panel state and names each reviewer's session.
-- **How to revert:** recorded merge bounds determine the explanation.
-  A squash names its commit on the target; a merge verifies its target parent; a fast-forward lists the merged commits in reverse order.
-  Fast-forwards containing merges need an explicit plan.
-  Missing stamps or objects do not produce guessed commands.
-  “No merge recorded” does not claim that no merge occurred if recording failed.
-
-Git commands in a receipt are explanations only.
-**Ask a run to revert** in the web or TUI opens the new-work composer with a proposed task; inspect it before submitting.
-You can also copy the recorded merge details into a steer request to prepare the reversal.
-The reversal needs its own checks; the original receipt does not certify a merge against a moved target or the later reversal.
-
-## Verification
-
-The verify command is the success gate.
-
-- Pin one with `harness.verify.command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.
-- By default the model can run it (`run_verify_command`) and the harness never does: an end that no run of the gate covers reads `unverified` and exits 0.
-  `harness.verify.when = "finish"` makes the harness run it when `finish_session` arrives over an unverified tree, and `"turn"` after every editing turn.
-- With `harness.verify.at_start = true` and `harness.verify.when` set to `"finish"` or `"turn"`, a fresh run runs the gate once before its first turn, so a gate red at the base is known as that.
-- Under `finish` or `turn`, a red gate at finish returns to the model `harness.verify.retries` times, then the run ends red.
-- An unverified run's end guidance counts visible uncommitted changes and new untracked files as work, regardless of Git control or commit policy.
-  Files untracked at start, hidden paths and ignored output stay excluded.
-- The red-gate end block reads the session's first recorded baseline, including earlier executions before a resume: a green base attributes the red gate to this run's edits, a red base says the gate was red there too.
-- A fork starts its own log without the parent's baseline; its base is the commit it forked from.
-- [`[harness]`](config.md#harness) has the inference order and `harness.verify.when`.
-- An inferred `cargo test --quiet` still needs a toolchain and dependencies inside the jail; see [Rust toolchains](security.md#rust-toolchains).
-
-## Worktrees
-
-`run --worktree`, a run-mode fork, each `--parallel` child and a run-mode machine state work in a worktree of their own.
-
-- `[git.worktree].kind` chooses the worktree of a fork and a `--worktree` run: `clone` (the default), a clone of the repository whose commits agent6 copies into the repository as the run makes them, or `linked`, a linked git worktree; a child, a reviewer and a machine state work in a clone.
-- It starts with the repository's tracked files at the commit it was cut from: no uncommitted change, and nothing git does not track (`.venv`, `node_modules`, a build directory).
-- `[git.worktree].setup_command` builds what is missing; it runs once in each new worktree, before the first turn:
-
-    ```sh
-    agent6 config set --repo git.worktree.setup_command '["uv", "sync"]'
-    ```
-
-- Unset, a `## Setup command` fenced block in AGENTS.md supplies it; a `--worktree` run and a child read it from the commit the worktree is cut from, not from an uncommitted edit, and print the command and that AGENTS.md gave it.
-    - an AGENTS.md that is a symlink is not read there: set `git.worktree.setup_command`
-- The command runs in the run's own sandbox, under the isolation, network and grants of every command of that run; with no route out it has to work offline ([the offline recipe](security.md#4-commands-and-environment)).
-- Machine clones follow the [state setup and failure rules](state-machines.md#agent) and [setup approval policy](security.md#4-commands-and-environment).
-- For run, fork and child sessions, the command and output tail are printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any turn (exit `1`).
-    - A fork's unread steer survives the setup failure and reaches the worker on a bare resume.
-  For a run or child, no turn ran, so `agent6 resume` has nothing to continue: start the run again once the command works.
-- A run prints a child's failed setup command and its output when it imports the child; `agent6 sessions show <id>` keeps the command, and a failed setup's output, after the worktree is gone.
-- The files it leaves untracked stay out of the run's commits.
-- The verify gate is settled in your checkout and carried into the workspace: a gate inferred as `.venv/bin/python -m pytest -q` stays that.
-- A gate whose first word is a path git does not track, with no setup command, refuses `run --worktree`, `fork` and `run --parallel` before anything is created; the refusal names the path, the config line and the AGENTS.md block.
+Read `actor` on `model.*` and `provider.request` journal events and on provider transcripts.
+Inside the recorded request, a message's `role` identifies its speaker, such as `user` or `assistant`.
 
 ## Carry your state with the workspace
 

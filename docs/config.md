@@ -554,7 +554,7 @@ Findings injected in an earlier round or execution neither repeat nor count towa
 
 Both writers use the size thresholds (about four characters per token).
 Only local compaction uses `summariser`, `elision_gists` and the `keep_` settings.
-The [usage guide](usage.md) explains which messages survive a summary restart.
+The [usage guide](usage.md#compaction) explains which messages survive a summary restart.
 
 | Field | Default | Meaning |
 |---|---|---|

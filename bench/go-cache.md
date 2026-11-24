@@ -33,4 +33,4 @@ Times are seconds, in replicate order.
 The default stays `auto`: temporary under `full`, persistent where private tmpfs is unavailable.
 An existing cache does not establish that the operator accepts cross-run persistence of executable files and tool configuration.
 The explicit `cache` setting already provides reuse without granting the operator's own Go cache.
-See [Go build cache](../docs/usage.md#go-build-cache) for the setup.
+See [Go build cache](../docs/cli.md#go-build-cache) for the setup.
