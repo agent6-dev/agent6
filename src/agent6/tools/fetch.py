@@ -19,11 +19,15 @@ import dataclasses
 import ipaddress
 import socket
 import time
+from typing import TYPE_CHECKING, Any
 from urllib import parse
 
 import httpx2
 
-from agent6.tools import http_body
+from agent6.tools import http_body, results, schema, tool_errors
+
+if TYPE_CHECKING:
+    from agent6.tools import dispatch
 
 # Beyond the cap the read is refused, never silently truncated.
 MAX_BYTES = 1 << 20
@@ -228,3 +232,44 @@ def fetch_url(checked: Checked) -> Fetched:
         raise FetchRefusedError(str(exc)) from exc
     except httpx2.HTTPError as exc:
         raise FetchRefusedError(f"could not fetch {checked.url}: {exc}") from exc
+
+
+def fetch(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.FetchResult:
+    """Fetch one URL: an allow-listed host reads, any other asks.
+
+    Args:
+        ctx: The approved hosts and the operator approval gate.
+        raw: The tool call's arguments.
+
+    Returns:
+        The response.
+
+    Raises:
+        ToolError: The URL or the response was refused.
+        ToolDeniedError: The host is off the list and the operator did not approve.
+    """
+    args = schema.FetchInput.model_validate(raw)
+    try:
+        checked = check_url(args.url)
+    except FetchRefusedError as exc:
+        raise tool_errors.ToolError(str(exc)) from exc
+    # The list is the standing approval; a GET can carry data out, so an unnamed host is the
+    # operator's call. Nothing has resolved yet: the DNS query itself carries the name out.
+    if not host_allowed(checked.host, ctx.config.sandbox.fetch_approved_hosts) and not ctx.approve(
+        f"Allow fetch: {checked.prompt()}"
+    ):
+        raise tool_errors.ToolDeniedError(
+            f"fetch not approved for {checked.host}"
+            " (add it to sandbox.fetch_approved_hosts to allow it)"
+        )
+    try:
+        got = fetch_url(checked)
+    except FetchRefusedError as exc:
+        raise tool_errors.ToolError(str(exc)) from exc
+    return results.FetchResult(
+        url=got.url,
+        status=got.status,
+        content_type=got.content_type,
+        body=got.body,
+        location=got.location,
+    )

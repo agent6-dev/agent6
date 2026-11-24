@@ -239,7 +239,7 @@ class ToolDispatcher:
             schema.RunVerifyInput.TOOL_NAME: command_tools.run_verify_command,
             schema.RunCommandInput.TOOL_NAME: command_tools.run_command,
             schema.ReadSessionInput.TOOL_NAME: lambda ctx, raw: self._read_session(raw),
-            schema.FetchInput.TOOL_NAME: lambda ctx, raw: self._fetch(raw),
+            schema.FetchInput.TOOL_NAME: fetch.fetch,
             schema.ReadBackgroundInput.TOOL_NAME: command_tools.read_background,
             schema.StopBackgroundInput.TOOL_NAME: command_tools.stop_background,
             schema.RunMetricInput.TOOL_NAME: command_tools.run_metric_command,
@@ -1003,45 +1003,6 @@ class ToolDispatcher:
                 "background commands need a session directory; none was wired"
             )
         return self._shells
-
-    def _fetch(self, raw: dict[str, Any]) -> results.FetchResult:
-        """Fetch one URL: an allow-listed host reads, any other asks.
-
-        Args:
-            raw: The tool call's arguments.
-
-        Returns:
-            The response.
-
-        Raises:
-            ToolError: The URL or the response was refused.
-            ToolDeniedError: The host is off the list and the operator did not approve.
-        """
-        args = schema.FetchInput.model_validate(raw)
-        try:
-            checked = fetch.check_url(args.url)
-        except fetch.FetchRefusedError as exc:
-            raise tool_errors.ToolError(str(exc)) from exc
-        # The list is the standing approval; a GET can carry data out, so an unnamed host is the
-        # operator's call. Nothing has resolved yet: the DNS query itself carries the name out.
-        if not fetch.host_allowed(
-            checked.host, self._config.sandbox.fetch_approved_hosts
-        ) and not self._approve(f"Allow fetch: {checked.prompt()}"):
-            raise tool_errors.ToolDeniedError(
-                f"fetch not approved for {checked.host}"
-                " (add it to sandbox.fetch_approved_hosts to allow it)"
-            )
-        try:
-            got = fetch.fetch_url(checked)
-        except fetch.FetchRefusedError as exc:
-            raise tool_errors.ToolError(str(exc)) from exc
-        return results.FetchResult(
-            url=got.url,
-            status=got.status,
-            content_type=got.content_type,
-            body=got.body,
-            location=got.location,
-        )
 
     def _read_session(
         self, raw: dict[str, Any]
