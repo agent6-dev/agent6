@@ -309,21 +309,26 @@ def test_a_cut_stream_is_truncated_and_books_what_it_cost() -> None:
         )
 
 
+_TIER_REFUSAL = "The flex service tier is not enabled for this project"
+
+
 @pytest.mark.parametrize(
-    ("code", "message", "refused"),
+    ("labels", "message", "refused"),
     [
-        ("invalid_request_error", "The flex service tier is not enabled for this project", True),
-        ("rate_limit_exceeded", "Rate limit exceeded for the flex service tier", False),
+        ({"code": "invalid_request_error"}, _TIER_REFUSAL, True),
+        ({"type": "invalid_request_error", "code": "invalid_value"}, _TIER_REFUSAL, True),
+        ({"code": "permission_error"}, _TIER_REFUSAL, True),
+        ({"code": "rate_limit_exceeded"}, "Rate limit exceeded for the flex service tier", False),
     ],
 )
 def test_a_failed_stream_distinguishes_tier_refusal_from_rate_limit(
-    code: str, message: str, refused: bool
+    labels: dict[str, str], message: str, refused: bool
 ) -> None:
-    """The request error names the setting even without a param; the rate limit retries."""
+    """A request error names the setting even without a param; the rate limit retries."""
     lines = _evt(
         {
             "type": "response.failed",
-            "response": {"status": "failed", "error": {"code": code, "message": message}},
+            "response": {"status": "failed", "error": {**labels, "message": message}},
         }
     )
     with (

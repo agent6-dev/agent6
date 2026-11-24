@@ -20,7 +20,13 @@ from typing import Any
 
 import httpx2
 
-from agent6.providers import openai_messages, openai_recovery, provider_types, stream_lifecycle
+from agent6.providers import (
+    openai_messages,
+    openai_recovery,
+    provider_types,
+    stream_lifecycle,
+    transport,
+)
 
 # The thinking-block key an opaque reasoning item rides under, with its route.
 REPLAY_KEY = "reasoning_replay"
@@ -382,7 +388,7 @@ def stream_error(
     status = 429 if code in usage_limit_codes else None
     detail = str(err.get("message") or code or "unknown error")
     tier_refused = provider_types.refuses_service_tier(
-        err, 400 if code == "invalid_request_error" else status
+        err, status or transport.envelope_status(err)
     )
     if tier_refused:
         status = 400
