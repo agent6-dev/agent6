@@ -688,9 +688,9 @@ def test_unconfined_server_ties_to_the_agent(monkeypatch: pytest.MonkeyPatch) ->
 
     class _P:
         pid = 4242
-        stdin = None
-        stdout = None
-        stderr = None
+        stdin: None = None
+        stdout: None = None
+        stderr: None = None
 
     def fake_popen(*args: object, **kwargs: object) -> _P:
         captured.update(kwargs)

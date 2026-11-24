@@ -25,8 +25,8 @@ class _FakeProc:
     def __init__(self, *, wait_raises: BaseException | None, alive_after: bool) -> None:
         self.pid = 424242
         self.stdin: IO[bytes] | None = None
-        self.stdout = None
-        self.stderr = None
+        self.stdout: IO[bytes] | None = None
+        self.stderr: IO[bytes] | None = None
         self._wait_raises = wait_raises
         self._alive_after = alive_after
         self.waited = False

@@ -1342,7 +1342,7 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
 
     class _HungProc:
         pid = 424242
-        returncode = None
+        returncode: None = None
 
         def wait(self, timeout: float | None = None) -> int:
             if timeout is not None:

@@ -31,6 +31,10 @@ from agent6.tools import results as tools_results
 from agent6.viewmodel import children as vm_children
 
 
+def _noop(*_args: object, **_kwargs: object) -> None:
+    """Accept any call and do nothing."""
+
+
 def _git(repo: pathlib.Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
@@ -200,9 +204,9 @@ def _dispatcher(tmp_path: pathlib.Path, children: _Running) -> parallel_dispatch
         curator=None,
         max_children=4,
         child_spawner=children,
-        save_snapshot=lambda *_a, **_k: None,
+        save_snapshot=_noop,
         log=lambda _m: None,
-        emit=lambda *_a: None,
+        emit=_noop,
         emit_graph_snapshot=lambda: None,
         session_id="root",
         execution_id="exec-1",

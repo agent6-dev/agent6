@@ -42,6 +42,10 @@ from agent6.ui.cli import parallel
 from agent6.vcs.git import read as git_read
 
 
+def _noop(*_args: object, **_kwargs: object) -> None:
+    """Accept any call and do nothing."""
+
+
 def ended(results: Sequence[child_records.ChildResult]) -> list[child_records.StartedChild]:
     """Return children that have already ended with these results, as a fake spawner starts them."""
     started: list[child_records.StartedChild] = []
@@ -205,7 +209,7 @@ def dispatcher(
         curator=None,
         max_children=4,
         child_spawner=spawner,
-        save_snapshot=lambda *_a, **_k: None,
+        save_snapshot=_noop,
         log=lambda _m: None,
         emit=event_log.EventSink(session_dir / "logs.jsonl").emit,
         emit_graph_snapshot=lambda: None,

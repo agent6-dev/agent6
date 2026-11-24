@@ -733,7 +733,7 @@ def test_ctrl_c_kills_a_dashboard_that_ignores_graceful_shutdown(
     actions: list[str] = []
 
     class _Wedged:
-        returncode = None
+        returncode: None = None
         waits = 0
 
         def poll(self) -> None:

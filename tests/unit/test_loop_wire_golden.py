@@ -38,7 +38,7 @@ class _StubDispatcher:
     """
 
     config = config.Config()
-    allowed_tools = None
+    allowed_tools: None = None
 
     def parallel_available(self) -> bool:
         """A stub offers the model no `parallel` tool."""
@@ -54,7 +54,7 @@ class _StubDispatcher:
     operator_wait_s: float = 0.0  # the time waited on the operator, which the guards subtract
 
     dag_available = True
-    last_verification = None
+    last_verification: None = None
     verify_withheld = False
 
     def available_tool_names(self) -> tuple[str, ...]:

@@ -2197,15 +2197,17 @@ class Harness:
     @functools.cached_property
     def parallel(self) -> parallel_dispatch.ParallelDispatcher:
         """Return the `/parallel` child dispatcher."""
+
+        def save_snapshot(*args: Any, **kwargs: Any) -> None:
+            loop_resume.save_resume_snapshot(self, *args, **kwargs)
+
         return parallel_dispatch.ParallelDispatcher(
             chain=self.chain,
             curator=self.curator,
             max_children=self.config.harness.parallel.max_children,
             child_spawner=self.bridge.child_spawner,
             authority=self.bridge.child_authority,
-            save_snapshot=lambda *args, **kwargs: loop_resume.save_resume_snapshot(
-                self, *args, **kwargs
-            ),
+            save_snapshot=save_snapshot,
             log=self.log,
             emit=self.emit,
             emit_graph_snapshot=self._emit_graph_snapshot,

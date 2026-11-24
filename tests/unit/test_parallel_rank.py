@@ -38,6 +38,10 @@ ONE, TWO, THREE = "root-p1-l1", "root-p1-l2", "root-p1-l3"
 JUDGE = "root-rp1-l1"
 
 
+def _noop(*_args: object, **_kwargs: object) -> None:
+    """Accept any call and do nothing."""
+
+
 def _git(repo: pathlib.Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
@@ -420,7 +424,7 @@ def _dispatcher(
         curator=None,
         max_children=4,
         child_spawner=run,
-        save_snapshot=lambda *_a, **_k: None,
+        save_snapshot=_noop,
         log=lambda _m: None,
         emit=events.append,
         emit_graph_snapshot=lambda: None,

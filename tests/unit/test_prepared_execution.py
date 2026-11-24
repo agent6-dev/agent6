@@ -30,6 +30,10 @@ from agent6.tools import (
 )
 
 
+def _noop(*_args: object, **_kwargs: object) -> None:
+    """Accept any call and do nothing."""
+
+
 def _config(**sandbox: object) -> Config:
     return Config.model_validate(
         {
@@ -470,7 +474,7 @@ def test_mid_run_gate_adoption_uses_the_prepared_target(
             chain=run_chain.RunChain(root),
             dispatcher=d,
             log=lambda _line: None,
-            emit=lambda *_args, **_kwargs: None,
+            emit=_noop,
         )
         state = loop_state.LoopState(original_task="build", tool_calls=0)
         turn = loop_state.TurnState(

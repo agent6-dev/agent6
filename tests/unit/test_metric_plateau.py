@@ -18,6 +18,10 @@ from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
 
 
+def _noop(*_args: object, **_kwargs: object) -> None:
+    """Accept any call and do nothing."""
+
+
 def _tie(turn: int) -> loop_state.TurnState:
     turn_state = loop_state.TurnState(
         number=turn, resp=mock.MagicMock(), assistant=loop_conversation.AssistantMessage((), ())
@@ -115,7 +119,7 @@ def test_the_auto_metric_says_it_runs_after_each_committed_edit() -> None:
         enabled=True,
         dispatcher=dispatcher,
         log=lines.append,
-        emit=lambda *_a, **_k: None,
+        emit=_noop,
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     sampler.auto_feedback(state, turn=3, sha="")

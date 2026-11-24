@@ -44,6 +44,10 @@ from agent6.sessions import layout as sessions_layout
 from agent6.tools import dispatch, tool_errors
 
 
+def _noop(*_args: object, **_kwargs: object) -> None:
+    """Accept any call and do nothing."""
+
+
 def _git(repo: pathlib.Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
@@ -399,9 +403,9 @@ def _dispatcher(
         curator=None,
         max_children=4,
         child_spawner=children,
-        save_snapshot=lambda *_a, **_k: None,
+        save_snapshot=_noop,
         log=lambda _m: None,
-        emit=lambda *_a: None,
+        emit=_noop,
         emit_graph_snapshot=lambda: None,
         session_id="root",
         execution_id="exec-1",
@@ -1080,7 +1084,7 @@ def test_resume_releases_a_prelaunch_hold_without_reusing_its_child_id(
     assert not children.tasks
     node = graph.nodes()["0002"]
     assert (node.status, node.held_by) == ("pending", ())
-    wf.parallel.save_snapshot = lambda *args, **kwargs: None
+    wf.parallel.save_snapshot = _noop
     assert work.start("", "", task_id="0002").children == ("run-p2-l1",)
     children.stop("run-p2-l1")
     wf.parallel.settle(conversation, 3)

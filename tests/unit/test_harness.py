@@ -62,6 +62,10 @@ _GIT_STUB = types.SimpleNamespace(
 )
 
 
+def _noop(*_args: object, **_kwargs: object) -> None:
+    """Accept any call and do nothing."""
+
+
 class _StubDispatcher:
     """The dispatcher surface the loop reads besides `dispatch`.
 
@@ -69,7 +73,7 @@ class _StubDispatcher:
     defaults filter no tools and withhold nothing.
     """
 
-    allowed_tools = None
+    allowed_tools: None = None
     config = Config()
 
     def parallel_available(self) -> bool:
@@ -88,7 +92,7 @@ class _StubDispatcher:
     operator_wait_s: float = 0.0  # the time waited on the operator, which the guards subtract
 
     dag_available = True
-    last_verification = None
+    last_verification: None = None
     verify_withheld = False
 
     def executable_available(self, executable: str) -> bool:
@@ -10035,7 +10039,7 @@ def test_media_recovery_is_one_shot_and_only_caches_unsupported() -> None:
     recovery = provider_call.MediaRecovery(media.InputCapabilities(kinds.ModelRoute("p", "m")))
     with pytest.raises(provider_types.MediaInputError):
         provider_call.call_with_media_recovery(
-            send, conv, recovery, emit=lambda *a, **kw: None, changed=lambda: None
+            send, conv, recovery, emit=_noop, changed=lambda: None
         )
     assert send.call_count == 2
     assert not recovery.unsupported

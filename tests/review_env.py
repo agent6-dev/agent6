@@ -24,6 +24,10 @@ READING_TOOLS = ("find_definition", "find_references", "list_dir", "outline", "r
 _providers: dict[int, Any] = {}
 
 
+def _noop(*_args: object, **_kwargs: object) -> None:
+    """Accept any call and do nothing."""
+
+
 class Dispatch(Protocol):
     def __call__(
         self, name: str, raw: dict[str, Any], /, *, origin: kinds.ToolCallOrigin | None = None
@@ -170,9 +174,9 @@ def run_panel(
             curator=None,
             max_children=4,
             child_spawner=spawn,
-            save_snapshot=lambda *_a, **_k: None,
+            save_snapshot=_noop,
             log=lambda _m: None,
-            emit=lambda *_a, **_k: None,
+            emit=_noop,
             emit_graph_snapshot=lambda: None,
             session_id="parent",
             session_dir=directory,

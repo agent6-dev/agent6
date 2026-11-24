@@ -111,7 +111,7 @@ def test_credential_requests_follow_no_redirect(monkeypatch: pytest.MonkeyPatch)
             return {"access_token": "AT", "expires_in": 60}
 
     class _Stream(_Resp):
-        request = None
+        request: None = None
 
         def __enter__(self) -> _Stream:
             return self

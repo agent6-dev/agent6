@@ -16,6 +16,10 @@ from agent6.providers import ProviderError, ProviderResponse, request_headers
 from tests.unit import test_harness
 
 
+def _noop(*_args: object, **_kwargs: object) -> None:
+    """Accept any call and do nothing."""
+
+
 def _ok() -> ProviderResponse:
     return ProviderResponse(
         text="ok",
@@ -39,7 +43,7 @@ def _caller(provider: Any, *, retry_count: int = 0) -> provider_call.ProviderCal
         should_abort=lambda: False,
         should_interrupt=lambda: False,
         log=lambda _m: None,
-        emit=lambda *_a, **_k: None,
+        emit=_noop,
     )
 
 

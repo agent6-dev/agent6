@@ -10,7 +10,7 @@ import json
 import pathlib
 import threading
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from typing import Any
 
 import httpx2
@@ -277,12 +277,13 @@ def test_recovery_waits_for_the_retry_answer(
 
     monkeypatch.setattr(transport, "http_post", post)
     monkeypatch.setattr(stream_lifecycle, "http_stream", stream)
+    on_text: Callable[[str], None] | None = (lambda _t: None) if streaming else None
     if statuses[-1] == 200:
         assert (
             provider.call(
                 system="s",
                 messages=[],
-                text_delta_callback=(lambda _t: None) if streaming else None,
+                text_delta_callback=on_text,
             ).text
             == "ok"
         )
@@ -291,7 +292,7 @@ def test_recovery_waits_for_the_retry_answer(
             provider.call(
                 system="s",
                 messages=[],
-                text_delta_callback=(lambda _t: None) if streaming else None,
+                text_delta_callback=on_text,
             )
     if len(statuses) == 1:
         assert _auth(events) == [] and sent == [f"Bearer {_AT}"]
