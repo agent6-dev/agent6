@@ -93,7 +93,7 @@ def test_run_only_options_are_refused_for_other_modes_and_groups(
     )
     assert spawn.spawn_new_work(tmp_path, "run", "/parallel 2 -- x", options=worktree) == (
         None,
-        "/parallel children clone the checkout; drop the worktree and the seed session",
+        "/parallel children clone the checkout; drop the worktree, the seed session and the images",
     )
     assert spawn.spawn_new_work(tmp_path, "ask", "", options=spawn.RunOptions(max_usd=1)) == (
         None,
