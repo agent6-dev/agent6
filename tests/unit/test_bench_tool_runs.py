@@ -188,42 +188,63 @@ def test_ask_scores_the_journal_answer_not_a_tool_result(
             assert docs and docs["ok"] == (arm == "control")
 
 
-@pytest.mark.needs_namespaces
-def test_offline_install_runs_the_patched_wheel(tmp_path: pathlib.Path) -> None:
-    """The CLI uses the arm's install, not an agent6 already on PATH."""
-    env = os.environ.copy()
+def test_offline_install_runs_the_patched_wheel(
+    scripted_root: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """The harness uses the arm's install, not an agent6 already on PATH."""
+    from bench.tools import run
+
     # Pytest isolates XDG; uv needs its prepared interpreters and package cache for the build.
-    env.setdefault("UV_CACHE_DIR", str(pathlib.Path.home() / ".cache/uv"))
-    env.setdefault("UV_PYTHON_INSTALL_DIR", str(pathlib.Path.home() / ".local/share/uv/python"))
+    for key, path in (
+        ("UV_CACHE_DIR", ".cache/uv"),
+        ("UV_PYTHON_INSTALL_DIR", ".local/share/uv/python"),
+    ):
+        if key not in os.environ:
+            monkeypatch.setenv(key, str(pathlib.Path.home() / path))
     probe = subprocess.run(
-        ["uv", "python", "find", "--offline", "3.13"], env=env, capture_output=True, check=False
+        ["uv", "python", "find", "--offline", "3.13"], capture_output=True, check=False
     )
     if probe.returncode:
         pytest.skip("offline wheel smoke needs uv's Python 3.13")
     with launch_env.scripted_provider() as (url, calls):
-        argv = _arguments(tmp_path, url, "no-patch", "textkit", 1)
-        built = subprocess.run(
-            [sys.executable, "-m", "bench.tools.run", *argv],
-            cwd=ROOT,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=180,
-            check=False,
-        )
-    if (
-        built.returncode
-        and "Packages were unavailable because the network was disabled" in built.stderr
-    ):
-        pytest.skip(
-            "offline wheel smoke needs cached build and runtime dependencies for Python 3.13"
-        )
-    assert built.returncode == 0, built.stderr
+        argv = _arguments(scripted_root, url, "no-patch", "textkit", 1)
+        try:
+            result = run.main(argv)
+        except subprocess.CalledProcessError:
+            if (
+                "Packages were unavailable because the network was disabled"
+                in capfd.readouterr().err
+            ):
+                pytest.skip(
+                    "offline wheel smoke needs cached Python 3.13 build and runtime dependencies"
+                )
+            raise
+    assert result == 0, capfd.readouterr().err
     tools = {t["function"]["name"] for t in calls[0]["tools"]}
     assert "apply_edit" in tools and "apply_patch" not in tools
-    row = json.loads((tmp_path / "out/results.jsonl").read_text())
+    row = json.loads((scripted_root / "out/results.jsonl").read_text())
     assert row["error"] is None and not row["passed"]
     assert row["cases_passed"] == 0 < row["cases_total"]
+
+
+def test_unscored_replicate_keeps_its_row_and_the_set_continues(
+    scripted_root: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    message = "scripted module diagnostic"
+    edit = {
+        "path": "textkit.py",
+        "kind": "overwrite",
+        "old_string": "",
+        "new_string": f"import sys\nprint('textkit')\nprint({message!r}, file=sys.stderr)\n",
+    }
+    with launch_env.scripted_provider([("apply_edit", edit), launch_env.FINISH]) as (url, _):
+        first, second = _run(
+            scripted_root, monkeypatch, url, "control", "textkit", reps=2, expected_exit=1
+        )
+    assert first["passed"] is None and first["error"] == "expected one JSON grader report"
+    assert second["error"] is None and second["passed"] is False and second["cases_total"] == 30
+    assert message not in capfd.readouterr().err
+    assert message in (scripted_root / "out/textkit-1/grader.stderr").read_text()
 
 
 def _run(
@@ -233,6 +254,7 @@ def _run(
     arm: str,
     task: str,
     reps: int = 1,
+    expected_exit: int = 0,
 ) -> list[dict[str, Any]]:
     from bench.tools import run
 
@@ -250,7 +272,7 @@ def _run(
     monkeypatch.setattr(run, "install", install)
     argv = _arguments(where, url, arm, task, reps)
     out = where / "out"
-    assert run.main(argv) == 0, [log.read_text() for log in out.rglob("agent.log")]
+    assert run.main(argv) == expected_exit, [log.read_text() for log in out.rglob("agent.log")]
     return [json.loads(line) for line in (out / "results.jsonl").read_text().splitlines()]
 
 

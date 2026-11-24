@@ -76,6 +76,8 @@ Priced calls have a $1 cap; unpriced calls have a 100,000-token fallback cap.
 Editing arms allow jailed commands and offer `parallel` so all three definitions reach the model.
 Ask withholds commands; a headless approval request is denied.
 The hidden grader runs after the session via `agent6 exec --new`, not against the host Python environment.
+It has two minutes and 64 KiB per output stream.
+Its stderr goes to the private `grader.stderr` file, not to the terminal.
 
 **Evidence.** `results.jsonl` has one row per attempted task and replicate.
 The task-replicate directory keeps `agent.log`, the repository and the journals.
@@ -86,3 +88,5 @@ This counts reported usage on the final attempt, not unreported retry spend.
 The table shows pooled failures/calls and the median [min,max] per run for failures, turns and tokens.
 It gives the count of known readings when any are missing.
 A missing journal or grader result is a measurement error, not a zero score.
+Grader stdout must contain one JSON report with the task's case and component totals.
+A malformed, extra or oversized report leaves that run unscored; the set continues.

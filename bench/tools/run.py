@@ -20,7 +20,7 @@ from collections.abc import Generator, Sequence
 from typing import Any
 
 from bench.coreagent import run as coreagent
-from bench.tools import journals
+from bench.tools import grading, journals
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 ARMS = ("control", "no-docs", "no-patch", "short")
@@ -126,32 +126,6 @@ def seed(repo: pathlib.Path, env: dict[str, str]) -> None:
         subprocess.run(["git", *command], cwd=repo, env=env, check=True)
 
 
-def grade(
-    binary: pathlib.Path,
-    config: pathlib.Path,
-    workspace: pathlib.Path,
-    env: dict[str, str],
-    scorer: pathlib.Path,
-) -> dict[str, Any]:
-    """Run the archived hidden grader inside a jail rooted above the submission."""
-    with scorer.open("rb") as script:
-        proc = subprocess.run(
-            [binary, "--config", config, "exec", "--new", "python3", "-I", "-", "repo"],
-            cwd=workspace,
-            env=env,
-            stdin=script,
-            stdout=subprocess.PIPE,
-            text=True,
-            timeout=120,
-            check=True,
-        )
-    result = json.loads(proc.stdout.strip().splitlines()[-1])
-    passed, total = result["cases_passed"], result["cases_total"]
-    if not (type(passed) is int and type(total) is int and 0 <= passed <= total and total > 0):
-        raise journals.MeasurementError("grader returned invalid case counts")
-    return {"passed": passed == total, "cases_passed": passed, "cases_total": total}
-
-
 def sample(
     binary: pathlib.Path,
     source: pathlib.Path,
@@ -203,7 +177,7 @@ def sample(
         if editing:
             # exec --new reads config from this pristine root, not from the edited repository.
             subprocess.run(["git", "init", "-q"], cwd=workspace, env=env, check=True)
-            row.update(grade(binary, config, workspace, env, fixture / "grade.py"))
+            row.update(grading.grade(binary, config, workspace, env, fixture / "grade.py"))
         else:
             row["passed"] = (row["answer"] or "").strip().strip("`") == task.answer
 
@@ -274,7 +248,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     ) as exc:
                         ok = False
                         row["error"] = str(exc)
-                        print(f"{trial}: {exc}", file=sys.stderr)
+                        print(
+                            f"{name}-{rep}: measurement error (see results.jsonl)", file=sys.stderr
+                        )
                     print(json.dumps(row), file=results, flush=True)
     return 0 if ok else 1
 
