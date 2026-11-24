@@ -690,7 +690,7 @@ class AnthropicProvider:
                         raise provider_types.ProviderError(
                             "Anthropic response message_start.message was not an object"
                         )
-                    call.transcript.serving = call.transcript.serving.observe(msg)
+                    call.transcript.observe_serving(msg)
                     for key in ("input_transformations", "context_management"):
                         if key in msg:
                             history_fields[key] = msg[key]

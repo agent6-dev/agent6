@@ -270,6 +270,18 @@ class TranscriptAttempt:
     serving: kinds.Serving = kinds.UNREPORTED
     error: str = ""
 
+    def observe_serving(self, response: object) -> None:
+        """Keep only serving facts safe to publish in the journal and token summary."""
+        if not isinstance(response, dict):
+            return
+        fields = {
+            key: scrub_secret_values(value, self.request_headers)
+            for key in ("model", "service_tier")
+            if isinstance(value := response.get(key), str) and value
+        }
+        if fields:
+            self.serving = self.serving.observe(fields)
+
     def write(self, outcome: TranscriptOutcome) -> None:
         """Publish the redacted attempt atomically.
 
@@ -564,7 +576,7 @@ class TranscriptSink:
         )
         attempt.response_status = response_status
         attempt.response_body = response_body
-        attempt.serving = attempt.serving.observe(response_body)
+        attempt.observe_serving(response_body)
         attempt.write("completed" if 200 <= response_status < 300 else "failed")
         assert attempt.path is not None
         return attempt.path

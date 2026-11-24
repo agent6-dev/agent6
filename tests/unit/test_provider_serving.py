@@ -369,3 +369,33 @@ def test_responses_reported_dollars_take_precedence_over_a_missing_tier_price(
         worker.call(system="s", messages=[])
     assert worker.budget.snapshot().usd_own_calls == 0.2
     assert worker.budget.snapshot().unmetered_tokens == 0
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("tier", ["auto", "flex"])
+def test_echoed_credentials_in_serving_facts_never_reach_the_journal_or_summary(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tier: str, stream: bool
+) -> None:
+    key = "stand-in-bearer-for-this-call"
+    monkeypatch.setenv("TEST_SERVING_KEY", key)
+    facts = {"model": f"snapshot:{key}", "service_tier": key}
+    with provider_endpoint.serve(_reply("responses", stream, facts)) as (url, calls):
+        worker = _worker(
+            tmp_path,
+            url,
+            "responses",
+            stream,
+            service_tier=tier,
+            auth_style="bearer",
+            api_key_env="TEST_SERVING_KEY",
+        )
+        if tier == "auto":
+            reply = worker.call(system="s", messages=[])
+            assert key not in repr(reply.serving)
+        else:
+            with pytest.raises(provider_types.ProviderError) as exc:
+                worker.call(system="s", messages=[])
+            assert exc.value.fatal and key not in str(exc.value) + repr(exc.value.serving)
+    transcript, rows = _records(tmp_path)
+    assert len(calls) == 1 and len(rows) == 2
+    assert key not in json.dumps([rows, transcript]) + worker.budget.format_summary()

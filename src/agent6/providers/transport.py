@@ -465,7 +465,7 @@ class ProviderCall:
                 request_body=self.body,
             )
             if self.transcript_sink is not None
-            else provider_types.TranscriptAttempt()
+            else provider_types.TranscriptAttempt(request_headers=headers)
         )
         transcript.serving = kinds.Serving(requested_tier=self.body.get("service_tier"))
         return transcript
@@ -572,7 +572,7 @@ class ProviderCall:
                 f"(status {resp.status_code}): "
                 f"{self._safe_text(resp.text, headers)[:500]}"
             )
-        transcript.serving = transcript.serving.observe(data)
+        transcript.observe_serving(data)
         transcript.response_body = data
         # OpenRouter and LiteLLM deliver an upstream error in a 2xx body; refused before metering.
         err = data.get("error")

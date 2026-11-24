@@ -454,7 +454,7 @@ def consume_stream(  # noqa: PLR0912
             evt: dict[str, Any] = json.loads(data_str)
         except json.JSONDecodeError:
             continue
-        call.transcript.serving = call.transcript.serving.observe(evt.get("response"))
+        call.transcript.observe_serving(evt.get("response"))
         kind = str(evt.get("type", ""))
         if kind == "response.output_text.delta":
             piece = str(evt.get("delta", ""))

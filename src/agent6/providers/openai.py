@@ -493,7 +493,7 @@ class OpenAIProvider:
                     evt: dict[str, Any] = json.loads(data_str)
                 except json.JSONDecodeError:
                     continue
-                call.transcript.serving = call.transcript.serving.observe(evt)
+                call.transcript.observe_serving(evt)
                 # A gateway delivers an upstream error as a frame; its status keeps the retry class.
                 err = evt.get("error")
                 if isinstance(err, dict):
