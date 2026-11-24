@@ -762,18 +762,17 @@ def remove_entry(
     table: str,
     name: str,
     *,
-    repo: bool = False,
+    preset: str,
+    repo: bool,
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
-    """Remove a whole named entry from the chosen config layer.
-
-    Under a selected preset the entry is read in its `[presets.<name>]` table, in the layer
-    holding that table.
+    """Remove a whole named entry from the confirmed preset and layer.
 
     Args:
         cwd: The repository.
         table: The registry table's path.
         name: The entry's name, stripped; blank is refused.
+        preset: The confirmed preset name, or an empty string for no preset.
         repo: Remove from the per-repo config instead of the global one.
         config_paths: The editor's `--config` files.
 
@@ -786,17 +785,18 @@ def remove_entry(
     name = name.strip()
     if not name:
         return False, f"{entry_table.label} name is required"
-    preset = model.selected_preset(cwd, config_paths)
-    if preset:
-        repo = bool(write.preset_layer(cwd, preset))
+    source = "repo" if repo else "global"
     try:
+        if preset != model.selected_preset(cwd, config_paths) or (
+            preset and model.preset_remove_layer(cwd, preset) != source
+        ):
+            return False, "The preset or config layer changed. Nothing was removed."
         result = write.remove_entry(cwd, entry_table, name, to_repo=repo, preset=preset)
     except (ConfigError, errors.OperatorError) as exc:
         return False, str(exc)
     if result.error:
         return False, result.error
     key = write.preset_key(preset, io.render_key((*io.split_key(table), name)))
-    source = "repo" if repo else "global"
     message = (
         f"removed {key} from {source} config"
         if result.removed

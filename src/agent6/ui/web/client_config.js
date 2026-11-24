@@ -524,8 +524,9 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   const entry = s.entry;
   const table = entry && tables.find(t => t.path === entry.table);
   // Remove targets the preset table's layer, not the edited leaf's layer.
-  const presetWhere = preset && `[presets.${preset}] in the ${data['agent6.preset'].remove_layer} config`;
-  const entryWhere = presetWhere || (entry && entry.source + ' config');
+  const removeLayer = preset ? data['agent6.preset'].remove_layer : entry?.source;
+  const presetWhere = preset && `[presets.${preset}] in the ${removeLayer} config`;
+  const entryWhere = presetWhere || removeLayer + ' config';
   let removeBtn = null;
   if (table) {
     const addBtn = el('button', null, 'Add ' + table.label + '…');
@@ -585,5 +586,5 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   if (removeBtn) removeBtn.onclick = () => confirmConfigRemoval(dialog, removeBtn,
     'Remove ' + table.label + " '" + entry.name + "'?",
     'This removes it and all its values from ' + entryWhere + '. Values from lower layers may become visible.', refresh,
-    () => postJSON('/api/config/entry/remove', {table: entry.table, name: entry.name, repo: entry.source === 'repo'}));
+    () => postJSON('/api/config/entry/remove', {table: entry.table, name: entry.name, preset, repo: removeLayer === 'repo'}));
 }

@@ -627,7 +627,7 @@ def test_quoted_skill_config_route_round_trip(
     }
     route = "/api/config/entry/remove" if entry_form else "/api/config"
     request = (
-        {"table": "skills.state", "name": "org.some.skill"}
+        {"table": "skills.state", "name": "org.some.skill", "repo": False, "preset": ""}
         if entry_form
         else {"key": key, "unset": True}
     )
@@ -1942,7 +1942,13 @@ def test_config_page_edits_the_selected_preset(server: tuple[web_server.WebServe
     assert status == 200
     assert io.read_toml_file(cfg)["presets"]["fast"]["providers"]["acme"]["backend"] == "openai"
     assert json.loads(_get(port, "/api/config")[1])["providers.acme.backend"]["source"] == "preset"
-    status, _ = _post(port, "/api/config/entry/remove", {"table": "providers", "name": "acme"})
+    remove: dict[str, object] = {"table": "providers", "name": "acme", "repo": False}
+    status, _ = _post(port, "/api/config/entry/remove", remove)
+    assert status == 400
+    status, refusal = _post(port, "/api/config/entry/remove", {**remove, "preset": ""})
+    assert status == 422 and "Nothing was removed" in str(refusal["error"])
+    assert "acme" in io.read_toml_file(cfg)["presets"]["fast"]["providers"]
+    status, _ = _post(port, "/api/config/entry/remove", {**remove, "preset": "fast"})
     assert status == 200
     assert "providers" not in io.read_toml_file(cfg)["presets"]["fast"]
     status, _ = _post(port, "/api/config", {"key": "sandbox.network", "unset": True})
@@ -2834,6 +2840,8 @@ def test_config_writes_report_shadowing_layers(
         if source == "flag":
             srv.config_paths = (higher,)
         described = "the repo config" if source == "repo" else f"--config {higher}"
+    if route == "/entry/remove":
+        body = {**body, "preset": "mask" if source == "preset" else "", "repo": False}
     status, data = _post(port, "/api/config" + route, body)
     assert status == 200, data
     if source == "preset":
@@ -2948,9 +2956,8 @@ def test_the_config_page_adds_and_removes_whole_entries(
             )
             is None
         )
-    status, data = _post(
-        port, "/api/config/entry/remove", {"table": table, "name": "example", "repo": repo}
-    )
+    removal: dict[str, object] = {"table": table, "name": "example", "repo": repo, "preset": ""}
+    status, data = _post(port, "/api/config/entry/remove", removal)
     assert status == 200 and data["ok"] is True, data
     doc = io.read_toml_file(target)
     for part in table.split("."):
@@ -2959,9 +2966,7 @@ def test_the_config_page_adds_and_removes_whole_entries(
     status, body, _ = _get(port, "/api/config")
     assert status == 200
     assert not any(key.startswith(f"{table}.example") for key in json.loads(body))
-    status, data = _post(
-        port, "/api/config/entry/remove", {"table": table, "name": "example", "repo": repo}
-    )
+    status, data = _post(port, "/api/config/entry/remove", removal)
     assert status == 200 and "not set" in str(data["message"]), data
 
 
@@ -2978,6 +2983,8 @@ def test_the_entry_routes_refuse_unknown_tables_and_empty_names(
     body: dict[str, object] = {"table": table, "name": name}
     if route == "/api/config/entry":
         body["fields"] = {"backend": "openai"}
+    else:
+        body.update(preset="", repo=False)
     status, data = _post(port, route, body)
     assert status == 422 and error in str(data["error"]), data
     assert not paths.global_config_path().exists()
@@ -2993,6 +3000,8 @@ def test_provider_entry_routes_use_the_schema_name_refusal(
     body: dict[str, object] = {"table": "providers", "name": name}
     if route == "/api/config/entry":
         body["fields"] = {"backend": "openai"}
+    else:
+        body.update(preset="", repo=False)
     status, data = _post(port, route, body)
     expected = (
         f"provider name {name!r} is not a valid TOML bare key"

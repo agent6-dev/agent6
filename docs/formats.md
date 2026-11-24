@@ -3289,7 +3289,7 @@ Source: [`agent6.ui.web.server.EntryBody`](https://github.com/agent6-dev/agent6/
 
 ### EntryRemoveBody
 
-**Support: public.** The entry and config layer to remove it from.
+**Support: public.** The entry, preset and layer named in the removal confirmation.
 
 Source: [`agent6.ui.web.server.EntryRemoveBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
 
@@ -3297,6 +3297,7 @@ Source: [`agent6.ui.web.server.EntryRemoveBody`](https://github.com/agent6-dev/a
 | --- | --- | --- |
 | `table` | `str` | The named config table's dotted path. |
 | `name` | `str` | The entry to remove. |
+| `preset` | `str` | The confirmed preset name, or an empty string for no preset. |
 | `repo` | `bool` | Whether to remove from repo config rather than global config. |
 
 ### ReviewerBody

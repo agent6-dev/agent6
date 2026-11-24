@@ -231,17 +231,19 @@ class EntryBody(_Body):
 
 
 class EntryRemoveBody(_Body):
-    """The entry and config layer to remove it from.
+    """The entry, preset and layer named in the removal confirmation.
 
     Attributes:
         table: The named config table's dotted path.
         name: The entry to remove.
+        preset: The confirmed preset name, or an empty string for no preset.
         repo: Whether to remove from repo config rather than global config.
     """
 
     table: str
     name: str
-    repo: bool = False
+    preset: str
+    repo: bool
 
 
 class ReviewerBody(_Body):
@@ -922,7 +924,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/config/entry/remove":
             body = EntryRemoveBody.model_validate(self._read_body())
             ok, msg = actions.remove_entry(
-                self.cwd, body.table, body.name, repo=body.repo, config_paths=self.config_paths
+                self.cwd,
+                body.table,
+                body.name,
+                preset=body.preset,
+                repo=body.repo,
+                config_paths=self.config_paths,
             )
         elif path == "/api/config/reviewer":
             rb = ReviewerBody.model_validate(self._read_body())

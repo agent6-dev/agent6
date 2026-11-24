@@ -12,7 +12,7 @@ from agent6 import paths
 from tests.web import captures, test_files_preview_browser, test_web_browser
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page, Route
+    from playwright.sync_api import Page, Request, Route
 
 pytestmark = pytest.mark.browser
 browser = test_files_preview_browser.browser
@@ -209,12 +209,12 @@ def test_config_reads_a_preset_through_a_foreign_owned_symlink(
     assert not errors
 
 
-@pytest.mark.parametrize("applied", [True, False], ids=["lost-reply", "lost-request"])
+@pytest.mark.parametrize("delivery", ["before reload", "after reload", "never"])
 def test_a_lost_removal_reply_requires_a_fresh_entry_confirmation(
     open_page: Callable[[int], tuple[Page, list[str]]],
     port: int,
     tmp_path: pathlib.Path,
-    applied: bool,
+    delivery: str,
 ) -> None:
     """A lost reply cannot reuse the repo confirmation for the exposed global entry."""
     from playwright import sync_api
@@ -222,16 +222,24 @@ def test_a_lost_removal_reply_requires_a_fresh_entry_confirmation(
     config = paths.global_config_path()
     config.parent.mkdir(parents=True, exist_ok=True)
     table = "[presets.work.providers.local]\n"
-    original = '[agent6]\npreset = "work"\n' + table + 'backend = "openai"\n'
+    original = (
+        '[agent6]\npreset = "work"\n[presets.work.web]\nport = 7658\n'
+        + table
+        + 'backend = "openai"\n'
+    )
     config.write_text(original)
     repo = paths.repo_config_path(tmp_path)
     repo.parent.mkdir(parents=True, exist_ok=True)
     repo.write_text(table + 'base_url = "http://localhost:1"\n')
     page, _ = open_page(port)
 
+    pending: list[Request] = []
+
     def lose_reply(route: Route) -> None:
-        if applied:
+        if delivery == "before reload":
             assert route.fetch().ok
+        elif delivery == "after reload":
+            pending.append(route.request)
         route.abort()
 
     page.route("**/api/config/entry/remove", lose_reply, times=1)
@@ -243,14 +251,25 @@ def test_a_lost_removal_reply_requires_a_fresh_entry_confirmation(
     question = page.get_by_role("alertdialog", name="Remove provider 'local'?")
     question.get_by_role("button", name="Remove", exact=True).click()
     sync_api.expect(page.get_by_text("no answer from the agent6 web server")).to_be_visible()
-    assert (table in repo.read_text()) == (not applied)
+    assert (table in repo.read_text()) == (delivery != "before reload")
     sync_api.expect(question).to_have_count(0)
     edit.click()
     remove.click()
-    layer = "global" if applied else "repo"
+    layer = "global" if delivery == "before reload" else "repo"
     sync_api.expect(question).to_have_accessible_description(
         re.compile(rf"\[presets\.work\].*{layer} config")
     )
+    if pending:
+        assert page.request.fetch(pending.pop()).ok
+        assert table not in repo.read_text()
+        with page.expect_response("**/api/config/entry/remove") as refusal:
+            question.get_by_role("button", name="Remove", exact=True).click()
+        assert config.read_text() == original
+        assert refusal.value.status == 422
+        sync_api.expect(page.get_by_text("Nothing was removed.", exact=False)).to_be_visible()
+        edit.click()
+        remove.click()
+        sync_api.expect(question).to_have_accessible_description(re.compile("global config"))
     question.get_by_role("button", name="Cancel").click()
     sync_api.expect(remove).to_be_focused()
     assert config.read_text() == original

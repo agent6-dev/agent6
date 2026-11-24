@@ -207,7 +207,9 @@ async function run() {
         assert.equal(writes.length, before);
       } else assert.equal(dialog(), undefined);
     }
-    assert.deepEqual(writes.at(-1), {path: '/api/config/entry/remove', body: {table, name, repo}});
+    assert.deepEqual(writes.at(-1), {
+      path: '/api/config/entry/remove', body: {table, name, repo, preset: ''},
+    });
     assert.equal(row(key), undefined);
   }
   assert.ok(row('skills.state.beta'));
