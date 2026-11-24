@@ -353,12 +353,12 @@ def _order(op: ast.cmpop, left: object, right: object) -> bool:
     """
     try:
         if isinstance(op, ast.Lt):
-            return left < right  # type: ignore[operator]
+            return left < right  # pyrefly: ignore[unsupported-operation]
         if isinstance(op, ast.LtE):
-            return left <= right  # type: ignore[operator]
+            return left <= right  # pyrefly: ignore[unsupported-operation]
         if isinstance(op, ast.Gt):
-            return left > right  # type: ignore[operator]
-        return left >= right  # type: ignore[operator]
+            return left > right  # pyrefly: ignore[unsupported-operation]
+        return left >= right  # pyrefly: ignore[unsupported-operation]
     except TypeError as exc:
         raise PredicateError(f"cannot order {left!r} and {right!r}") from exc
 
