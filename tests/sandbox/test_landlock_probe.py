@@ -8,7 +8,7 @@ import pathlib
 
 import pytest
 
-from agent6.sandbox import landlock_abi
+from agent6.sandbox import landlock
 
 
 def test_landlock_abi_reports_the_kernel_version() -> None:
@@ -17,7 +17,7 @@ def test_landlock_abi_reports_the_kernel_version() -> None:
     0 means "no Landlock" and makes warn_sandbox_gaps drop confinement everywhere, so `>= 0`
     passes for exactly the regression that matters.
     """
-    abi = landlock_abi()
+    abi = landlock.landlock_abi()
     assert isinstance(abi, int)
     lsm = pathlib.Path("/sys/kernel/security/lsm")
     if not lsm.is_file():

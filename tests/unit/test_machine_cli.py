@@ -19,7 +19,7 @@ import pytest
 from agent6 import errors, paths
 from agent6.app.machine import agent
 from agent6.machine import MachineJournal, write_stop_request
-from agent6.sandbox import detect
+from agent6.sandbox import detect, jail
 from agent6.sessions import ipc, process
 from agent6.ui.cli import main
 
@@ -2027,8 +2027,6 @@ def test_machine_test_uses_the_resolved_isolation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An explicit none skips offline mocks even when the host supports full isolation."""
-    from agent6.app.machine import scriptcheck
-
     monkeypatch.chdir(tmp_path)
     config = tmp_path / "operator.toml"
     config.write_text('[sandbox]\nisolation = "none"\n', encoding="utf-8")
@@ -2053,7 +2051,7 @@ def test_machine_test_uses_the_resolved_isolation(
         pytest.fail("offline mocks must not run when the config resolves to none")
 
     monkeypatch.setattr(detect, "probed_environment", environment)
-    monkeypatch.setattr(scriptcheck, "run_in_jail", unexpected_jail)
+    monkeypatch.setattr(jail, "run_in_jail", unexpected_jail)
     assert main(["--config", str(config), "machine", "test", str(machine)]) == 0
     assert "1 offline script test not run (no sandbox)" in capsys.readouterr().out
 

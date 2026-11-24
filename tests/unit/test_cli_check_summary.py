@@ -20,7 +20,7 @@ from agent6.app import preflight
 from agent6.app.session import setup as session_setup
 from agent6.config import ChatGPTProviderEntry, Config, load_config, secret_store
 from agent6.providers import oauth, oauth_protocol, provider_types, transport
-from agent6.sandbox import detect
+from agent6.sandbox import detect, jail, landlock
 from agent6.sessions import event_log
 from agent6.ui.cli import check_cmds as cli_check_cmds
 from agent6.ui.cli import main
@@ -366,7 +366,6 @@ _ENV = detect.Environment(
 def _stub_probes(monkeypatch: pytest.MonkeyPatch, isolation: str) -> None:
     """Pin the host at one level and make the jail probes pass without a launcher."""
     from agent6 import kinds
-    from agent6.ui.cli import check_sandbox
 
     monkeypatch.setattr(detect, "probed_environment", lambda: _ENV)
 
@@ -384,8 +383,8 @@ def _stub_probes(monkeypatch: pytest.MonkeyPatch, isolation: str) -> None:
 
     monkeypatch.setattr(detect, "resolve_isolation", _select)
     monkeypatch.setattr(detect, "degrade_reason", _no_degradation)
-    monkeypatch.setattr(check_sandbox, "landlock_abi", lambda: 5)
-    monkeypatch.setattr(check_sandbox, "run_in_jail", _run)
+    monkeypatch.setattr(landlock, "landlock_abi", lambda: 5)
+    monkeypatch.setattr(jail, "run_in_jail", _run)
 
 
 def test_sandbox_fails_when_a_run_would_refuse_the_config(

@@ -7,14 +7,3 @@ Main modules: `jail`, `jail_session`, `detect`, `container`, `landlock`.
 """
 
 from __future__ import annotations
-
-from agent6.sandbox.jail import JailUnavailableError, namespaces_work, run_in_jail  # re-export
-from agent6.sandbox.landlock import LandlockError, landlock_abi  # re-export
-
-__all__ = [
-    "JailUnavailableError",
-    "LandlockError",
-    "landlock_abi",
-    "namespaces_work",
-    "run_in_jail",
-]

@@ -18,7 +18,7 @@ import pytest
 from agent6 import kinds, paths
 from agent6.app import confine
 from agent6.config import Config, SandboxConfig
-from agent6.sandbox import detect, tool_paths
+from agent6.sandbox import detect, jail, landlock, tool_paths
 from agent6.tools import policy as tools_policy
 from agent6.ui.cli import check_sandbox, sandbox_paths
 
@@ -100,8 +100,8 @@ def _force(monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None =
 
     monkeypatch.setattr(detect, "resolve_isolation", _select)
     monkeypatch.setattr(detect, "degrade_reason", _reason)
-    monkeypatch.setattr(check_sandbox, "landlock_abi", lambda: 5)
-    monkeypatch.setattr(check_sandbox, "run_in_jail", _run)
+    monkeypatch.setattr(landlock, "landlock_abi", lambda: 5)
+    monkeypatch.setattr(jail, "run_in_jail", _run)
     monkeypatch.setattr(
         tool_paths,
         "operator_tool_mounts",

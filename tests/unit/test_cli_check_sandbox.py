@@ -49,7 +49,7 @@ def _fake_result(argv: tuple[str, ...], rc: int) -> kinds.CommandResult:
 def stub_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
     """Stub landlock_abi, run_in_jail and the tool scan; record every policy the check builds."""
     seen: list[kinds.JailPolicy] = []
-    monkeypatch.setattr(check_sandbox, "landlock_abi", lambda: 8)
+    monkeypatch.setattr(landlock, "landlock_abi", lambda: 8)
 
     def fake_run(policy: kinds.JailPolicy) -> kinds.CommandResult:
         seen.append(policy)
@@ -57,7 +57,7 @@ def stub_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
         rc = 2 if policy.argv[0].endswith("getent") else 0
         return _fake_result(policy.argv, rc)
 
-    monkeypatch.setattr(check_sandbox, "run_in_jail", fake_run)
+    monkeypatch.setattr(jail, "run_in_jail", fake_run)
     monkeypatch.setattr(tool_paths, "operator_tool_mounts", lambda: _MOUNTS)
     return seen
 
@@ -106,12 +106,12 @@ def linked_install_roots(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
             (bins / link).symlink_to(target)
     monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins,))
     _force_profile(monkeypatch, "full")
-    monkeypatch.setattr(check_sandbox, "landlock_abi", lambda: 5)
+    monkeypatch.setattr(landlock, "landlock_abi", lambda: 5)
 
     def run(policy: kinds.JailPolicy) -> kinds.CommandResult:
         return _fake_result(policy.argv, 2 if policy.argv[0].endswith("getent") else 0)
 
-    monkeypatch.setattr(check_sandbox, "run_in_jail", run)
+    monkeypatch.setattr(jail, "run_in_jail", run)
     return tmp_path
 
 
@@ -190,8 +190,8 @@ def test_check_sandbox_reports_a_landlock_probe_error(
     def _run(policy: kinds.JailPolicy) -> kinds.CommandResult:
         return _fake_result(policy.argv, 0)
 
-    monkeypatch.setattr(check_sandbox, "landlock_abi", _denied)
-    monkeypatch.setattr(check_sandbox, "run_in_jail", _run)
+    monkeypatch.setattr(landlock, "landlock_abi", _denied)
+    monkeypatch.setattr(jail, "run_in_jail", _run)
 
     checks = check_sandbox.check_sandbox_section(Config())
 
@@ -642,7 +642,7 @@ def test_check_sandbox_runs_its_probes_unstubbed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The operator's one "is my sandbox working" command runs its probes unstubbed once."""
-    if check_sandbox.landlock_abi() < 1:
+    if landlock.landlock_abi() < 1:
         pytest.skip("no Landlock: the command's own landlock_abi row fails here")
     monkeypatch.chdir(tmp_path)
     checks = check_sandbox.check_sandbox_section(Config())
@@ -836,12 +836,12 @@ def test_tool_discovery_retains_links_beside_path_reason(
     (bins / "python").symlink_to(runtime / "python")
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins,))
-    monkeypatch.setattr(check_sandbox, "landlock_abi", lambda: 5)
+    monkeypatch.setattr(landlock, "landlock_abi", lambda: 5)
 
     def run(policy: kinds.JailPolicy) -> kinds.CommandResult:
         return _fake_result(policy.argv, 2 if policy.argv[0].endswith("getent") else 0)
 
-    monkeypatch.setattr(check_sandbox, "run_in_jail", run)
+    monkeypatch.setattr(jail, "run_in_jail", run)
     check_sandbox.check_sandbox_section(Config())
     rows = _commands_block(capsys.readouterr().out)
     bin_row = next(line for line in rows if f" {bins}  " in line)
@@ -1195,7 +1195,7 @@ def test_check_sandbox_reports_a_jail_whose_proc_mount_was_refused(
 ) -> None:
     """A /proc the jail cannot read fails its probe with what was seen, and the row says so."""
     _force_profile(monkeypatch, "full")
-    monkeypatch.setattr(check_sandbox, "landlock_abi", lambda: 8)
+    monkeypatch.setattr(landlock, "landlock_abi", lambda: 8)
     monkeypatch.setattr(tool_paths, "operator_tool_mounts", lambda: _MOUNTS)
 
     def run(policy: kinds.JailPolicy) -> kinds.CommandResult:
@@ -1216,7 +1216,7 @@ def test_check_sandbox_reports_a_jail_whose_proc_mount_was_refused(
             duration_s=0.0,
         )
 
-    monkeypatch.setattr(check_sandbox, "run_in_jail", run)
+    monkeypatch.setattr(jail, "run_in_jail", run)
     checks = check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     assert _row(checks, "sandbox").status == "FAIL", out

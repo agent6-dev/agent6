@@ -18,12 +18,7 @@ from agent6.config import (
     MCPServerEntry,
     layer,
 )
-from agent6.sandbox import (
-    JailUnavailableError,
-    detect,
-    jail,
-    tool_paths,
-)
+from agent6.sandbox import detect, jail, tool_paths
 from agent6.tools import mcp_client, verify_infer
 from agent6.ui.cli import check_render, check_sandbox, common
 from agent6.vcs.git import policy as git_policy
@@ -155,7 +150,7 @@ def _doctor_check_mcp(cfg: Config) -> list[kinds.DoctorCheck]:
     try:
         env = detect.probed_environment()
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
-    except (detect.IsolationUnavailableError, JailUnavailableError) as exc:
+    except (detect.IsolationUnavailableError, jail.JailUnavailableError) as exc:
         print(f"[FAIL] mcp: {exc}")
         return [kinds.DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
     root = pathlib.Path.cwd()
@@ -190,7 +185,7 @@ def _doctor_check_mcp(cfg: Config) -> list[kinds.DoctorCheck]:
                 and any(srv.effective_network == "session" for srv in probed.values())
                 else None
             )
-        except JailUnavailableError as exc:
+        except jail.JailUnavailableError as exc:
             print(f"[FAIL] mcp: {exc}")
             return [*out, kinds.DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
         try:
@@ -198,7 +193,7 @@ def _doctor_check_mcp(cfg: Config) -> list[kinds.DoctorCheck]:
                 session_setup.mcp_server_spec(cfg, root, isolation, name, srv, readonly=True)
                 for name, srv in probed.items()
             ]
-        except JailUnavailableError as exc:
+        except jail.JailUnavailableError as exc:
             # The jail's HOME cannot be made.
             print(f"[FAIL] mcp: {exc}")
             return [*out, kinds.DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]

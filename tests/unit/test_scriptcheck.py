@@ -56,7 +56,7 @@ def _recorded_jail(
     def _no_child(*_args: object, **_kwargs: object) -> None:
         pytest.fail("a checker started outside the jail")
 
-    monkeypatch.setattr(scriptcheck, "run_in_jail", _run)
+    monkeypatch.setattr(jail, "run_in_jail", _run)
     monkeypatch.setattr(subprocess, "Popen", _no_child)
     return seen
 
@@ -102,7 +102,7 @@ def test_a_jail_that_cannot_start_is_a_problem(
     def _raise(_policy: object) -> kinds.CommandResult:
         raise jail.JailUnavailableError("no namespaces")
 
-    monkeypatch.setattr(scriptcheck, "run_in_jail", _raise)
+    monkeypatch.setattr(jail, "run_in_jail", _raise)
     problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full")
     assert problems
     assert all("could not run in a jail (no namespaces)" in problem for problem in problems)
@@ -294,7 +294,7 @@ def test_offline_tests_count_script_executions_not_discovered_cases(
 ) -> None:
     """Offline tests are scripts: a TestCase with no main call exits zero but is not discovered."""
     _write(tmp_path / "scripts", "thing_test.py", source)
-    monkeypatch.setattr(scriptcheck, "run_in_jail", _run_python_script)
+    monkeypatch.setattr(jail, "run_in_jail", _run_python_script)
     outcome = scriptcheck.run_offline_tests(tmp_path, "full")
     assert outcome.problems == ()
     assert outcome.ran == 1
@@ -303,7 +303,7 @@ def test_offline_tests_count_script_executions_not_discovered_cases(
 
 def test_offline_tests_pass(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _write(tmp_path / "scripts", "thing_test.py", "print('ok')\n")
-    monkeypatch.setattr(scriptcheck, "run_in_jail", _fake_jail(0))
+    monkeypatch.setattr(jail, "run_in_jail", _fake_jail(0))
     assert scriptcheck.run_offline_tests(tmp_path, "full").problems == ()
 
 
@@ -323,7 +323,7 @@ def test_offline_tests_disable_python_bytecode(
             duration_s=0.0,
         )
 
-    monkeypatch.setattr(scriptcheck, "run_in_jail", _run)
+    monkeypatch.setattr(jail, "run_in_jail", _run)
 
     assert scriptcheck.run_offline_tests(tmp_path, "full").problems == ()
     assert ("PYTHONDONTWRITEBYTECODE", "1") in seen[0].env
@@ -333,7 +333,7 @@ def test_offline_tests_fail_surfaces_stderr(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write(tmp_path / "scripts", "thing_test.py", "raise SystemExit(1)\n")
-    monkeypatch.setattr(scriptcheck, "run_in_jail", _fake_jail(1, "AssertionError: boom"))
+    monkeypatch.setattr(jail, "run_in_jail", _fake_jail(1, "AssertionError: boom"))
     problems = scriptcheck.run_offline_tests(tmp_path, "full").problems
     assert len(problems) == 1
     assert "thing_test.py" in problems[0]
@@ -348,7 +348,7 @@ def test_offline_tests_relativize_bundle_paths(
     # stripped down to bundle-relative ones.
     _write(tmp_path / "scripts", "thing_test.py", "raise SystemExit(1)\n")
     stderr = 'File "{cwd}/scripts/thing_test.py", line 1\nNameError: x'
-    monkeypatch.setattr(scriptcheck, "run_in_jail", _fake_jail(1, stderr))
+    monkeypatch.setattr(jail, "run_in_jail", _fake_jail(1, stderr))
     problems = scriptcheck.run_offline_tests(tmp_path, "full").problems
     assert "agent6-scripttest" not in problems[0]  # the temp copy's path is stripped
     assert 'File "scripts/thing_test.py"' in problems[0]
@@ -365,7 +365,7 @@ def test_offline_tests_skipped_on_none_profile(
         called = True
         return kinds.CommandResult(argv=(), returncode=0, stdout="", stderr="", duration_s=0.0)
 
-    monkeypatch.setattr(scriptcheck, "run_in_jail", _boom)
+    monkeypatch.setattr(jail, "run_in_jail", _boom)
     outcome = scriptcheck.run_offline_tests(tmp_path, "none")
     assert outcome.problems == ()
     assert outcome.skipped == 1 and "no sandbox" in outcome.skip_reason
@@ -387,7 +387,7 @@ def test_offline_tests_skipped_on_partial_profile(
         called = True
         return kinds.CommandResult(argv=(), returncode=0, stdout="", stderr="", duration_s=0.0)
 
-    monkeypatch.setattr(scriptcheck, "run_in_jail", _boom)
+    monkeypatch.setattr(jail, "run_in_jail", _boom)
     outcome = scriptcheck.run_offline_tests(tmp_path, "partial")
     assert outcome.problems == () and not called
     assert outcome.skipped == 1 and "sandbox.isolation = 'full'" in outcome.skip_reason
@@ -407,7 +407,7 @@ def test_offline_tests_jail_unavailable_surfaces_diagnostic(
     def _raise(_policy: object) -> kinds.CommandResult:
         raise jail.JailUnavailableError("no namespaces")
 
-    monkeypatch.setattr(scriptcheck, "run_in_jail", _raise)
+    monkeypatch.setattr(jail, "run_in_jail", _raise)
     problems = scriptcheck.run_offline_tests(tmp_path, "full").problems
     assert len(problems) == 1
     assert "could not run offline tests" in problems[0]
@@ -441,7 +441,7 @@ def test_offline_tests_get_a_fresh_data_dir_per_test(
             argv=policy.argv, returncode=rc, stdout="", stderr="leaked marker", duration_s=0.0
         )
 
-    monkeypatch.setattr(scriptcheck, "run_in_jail", _run)
+    monkeypatch.setattr(jail, "run_in_jail", _run)
     assert scriptcheck.run_offline_tests(tmp_path, "full").problems == ()
     assert not (tmp_path / ".scriptcheck_data").exists()  # still cleaned up after
 
@@ -470,7 +470,7 @@ def test_offline_tests_run_from_a_copy_outside_the_state_dir(
             duration_s=0.0,
         )
 
-    monkeypatch.setattr(scriptcheck, "run_in_jail", run)
+    monkeypatch.setattr(jail, "run_in_jail", run)
     assert scriptcheck.run_offline_tests(bundle, "full").problems == ()
     assert seen_cwds and all("statehome" not in c for c in seen_cwds)
 

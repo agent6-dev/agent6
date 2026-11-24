@@ -23,7 +23,7 @@ import tomllib
 
 from agent6 import kinds
 from agent6.app import reporter as app_reporter
-from agent6.sandbox import jail, run_in_jail
+from agent6.sandbox import jail
 
 __all__ = ["OfflineTestOutcome", "available_tools", "lint_and_typecheck", "run_offline_tests"]
 
@@ -105,7 +105,7 @@ def _run_static(
         timeout_s=180,
     )
     try:
-        res = run_in_jail(policy)
+        res = jail.run_in_jail(policy)
     except jail.JailUnavailableError as exc:
         return f"{label} could not run in a jail ({exc})"
     if res.returncode == 0:
@@ -326,7 +326,7 @@ def _run_offline_tests_in(
                 timeout_s=timeout_s,
             )
             try:
-                res = run_in_jail(policy)
+                res = jail.run_in_jail(policy)
             except jail.JailUnavailableError as exc:
                 return OfflineTestOutcome(
                     ran=ran,

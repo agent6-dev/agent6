@@ -17,13 +17,7 @@ from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.context import memory
-from agent6.sandbox import (
-    JailUnavailableError,
-    detect,
-    landlock,
-    landlock_abi,
-    run_in_jail,
-)
+from agent6.sandbox import detect, jail, landlock
 from agent6.tools import policy as tools_policy
 from agent6.tools import target_policy
 from agent6.ui.cli import check_render, common, sandbox_paths
@@ -180,7 +174,7 @@ def _probe(
     """
     reports: list[kinds.SandboxReport] = []
     try:
-        abi = landlock_abi()
+        abi = landlock.landlock_abi()
         reports.append(
             kinds.SandboxReport(
                 name="landlock_abi", status="PASS" if abi > 0 else "FAIL", detail=f"ABI {abi}"
@@ -191,7 +185,7 @@ def _probe(
 
     def _jail(*argv: str) -> kinds.CommandResult:
         """Return the result of argv in the selected jail with no network."""
-        return run_in_jail(
+        return jail.run_in_jail(
             kinds.JailPolicy(
                 cwd=pathlib.Path.cwd(),
                 argv=argv,
@@ -222,7 +216,7 @@ def _probe(
                 else "the launcher set up quietly",
             )
         )
-    except JailUnavailableError as exc:
+    except jail.JailUnavailableError as exc:
         reports.append(kinds.SandboxReport(name="jail_true", status="FAIL", detail=str(exc)))
 
     try:
@@ -241,7 +235,7 @@ def _probe(
                 ),
             )
         )
-    except JailUnavailableError as exc:
+    except jail.JailUnavailableError as exc:
         reports.append(kinds.SandboxReport(name="jail_proc", status="FAIL", detail=str(exc)))
 
     # Only `full` has a network namespace to probe; `partial` shares this process's network.
@@ -270,7 +264,7 @@ def _probe(
                     ),
                 )
             )
-        except JailUnavailableError as exc:
+        except jail.JailUnavailableError as exc:
             reports.append(
                 kinds.SandboxReport(name="jail_blocks_network", status="FAIL", detail=str(exc))
             )
@@ -300,7 +294,7 @@ def _probe(
                 ),
             )
         )
-    except JailUnavailableError as exc:
+    except jail.JailUnavailableError as exc:
         reports.append(
             kinds.SandboxReport(name="jail_blocks_etc_write", status="FAIL", detail=str(exc))
         )
@@ -389,7 +383,7 @@ def _container_section(cfg: Config) -> list[kinds.DoctorCheck]:
     root = pathlib.Path.cwd()
     try:
         report = session_runtime.describe_container(cfg, root)
-    except JailUnavailableError as exc:
+    except jail.JailUnavailableError as exc:
         check_render.result("FAIL", "container.discovery", str(exc))
         out.append(kinds.DoctorCheck(name="container.discovery", status="FAIL", detail=str(exc)))
     else:
@@ -447,7 +441,7 @@ def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
     try:
         env = detect.probed_environment()
         selected = detect.resolve_isolation(cfg.sandbox.isolation, env)
-    except (detect.IsolationUnavailableError, JailUnavailableError) as exc:
+    except (detect.IsolationUnavailableError, jail.JailUnavailableError) as exc:
         check_render.result("FAIL", "isolation selection", str(exc))
         return [kinds.DoctorCheck(name="sandbox.isolation", status="FAIL", detail=str(exc))]
     if cfg.sandbox.isolation == "container":
@@ -517,7 +511,7 @@ def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
             )
         print()
         _mcp_lines(cfg, ws.root, selected)
-    except JailUnavailableError as exc:
+    except jail.JailUnavailableError as exc:
         check_render.result("FAIL", "a run would refuse", str(exc))
         return [*out, kinds.DoctorCheck(name="sandbox.refusal", status="FAIL", detail=str(exc))]
     print()
