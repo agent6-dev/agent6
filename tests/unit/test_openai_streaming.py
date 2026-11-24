@@ -483,6 +483,7 @@ def test_streaming_idle_watchdog_kills_heartbeat_only_stream(
         def __init__(self) -> None:
             self.status_code = 200
             self.headers: dict[str, str] = {}
+            self.extensions: dict[str, object] = {}
             self._closed = threading.Event()
 
         def __enter__(self) -> _BlockingHeartbeatResponse:
@@ -548,6 +549,7 @@ def test_streaming_idle_watchdog_mid_stream_uses_the_short_timeout(
         def __init__(self) -> None:
             self.status_code = 200
             self.headers: dict[str, str] = {}
+            self.extensions: dict[str, object] = {}
             self._closed = threading.Event()
 
         def __enter__(self) -> _DataThenStallResponse:
@@ -633,6 +635,7 @@ def test_empty_role_delta_stays_in_the_prefill_budget(monkeypatch: pytest.Monkey
         def __init__(self) -> None:
             self.status_code = 200
             self.headers: dict[str, str] = {}
+            self.extensions: dict[str, object] = {}
             self._closed = threading.Event()
 
         def __enter__(self) -> _RoleThenSilent:

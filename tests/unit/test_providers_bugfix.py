@@ -437,6 +437,7 @@ class _PingOnlyStreamResponse:
     def __init__(self) -> None:
         self.status_code = 200
         self.headers: dict[str, str] = {}
+        self.extensions: dict[str, object] = {}
         self._closed = threading.Event()
 
     def __enter__(self) -> _PingOnlyStreamResponse:
