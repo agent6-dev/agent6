@@ -183,8 +183,10 @@ def _user_texts(messages: list[dict[str, Any]]) -> list[str]:
     ]
 
 
-def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[schema.UserQuestion]:
-    """Make the CLI front-end one that can ask, answering every question with `answer`."""
+def _answering_frontend(
+    monkeypatch: pytest.MonkeyPatch, answer: str, *, can_ask: bool = True
+) -> list[schema.UserQuestion]:
+    """Make the CLI front-end answer every question with `answer`, and say whether it can ask."""
     asked: list[schema.UserQuestion] = []
     real = run.session_frontend
 
@@ -204,7 +206,7 @@ def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[sc
 
         return dataclasses.replace(
             fe,
-            capabilities=dataclasses.replace(fe.capabilities, can_ask=True),
+            capabilities=dataclasses.replace(fe.capabilities, can_ask=can_ask),
             build_questioner=_questioner,
         )
 
@@ -534,6 +536,32 @@ def test_resume_refuses_an_outside_edit_nobody_can_answer_for(
     assert "a.py" in err and "no terminal and no front-end" in err
     assert git_read.chain_tip(repo, git_read.chain_ref_for("tree-ASK001")) == tip
     assert not (_session_dir(repo, "tree-ASK001") / "worker.pid").exists()
+
+
+def test_resume_reads_the_away_mode_after_it_scanned_the_tree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A resume refused on the away mode it read before the scan for outside edits.
+
+    The operator set `wait` while the scan ran. The resume said nobody could answer, though
+    its question would have waited for `agent6 answer`.
+    """
+    repo = _setup(tmp_path, monkeypatch, "")
+    _stopped_run(repo, monkeypatch, "tree-ASK003", _edit("z.txt", "1\n"))
+    (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
+    asked = _answering_frontend(monkeypatch, "include", can_ask=False)
+    scan = resume_tree.outside_edits
+
+    def _scan_while_the_operator_sets_wait(*args: Any, **kwargs: Any) -> list[str]:
+        found = scan(*args, **kwargs)
+        ipc.set_away_mode(_session_dir(repo, "tree-ASK003"), "wait")
+        return found
+
+    monkeypatch.setattr(resume_tree, "outside_edits", _scan_while_the_operator_sets_wait)
+
+    assert _resume(monkeypatch, "tree-ASK003", [_finish()]) == 0
+
+    assert len(asked) == 1 and "a.py" in asked[0].question
 
 
 @pytest.mark.parametrize(

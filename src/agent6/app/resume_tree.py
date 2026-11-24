@@ -25,6 +25,7 @@ from agent6.app import preflight, resume_chain
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.harness import loop_snapshot
+from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import schema
@@ -471,7 +472,7 @@ def classify(
     snapshot: loop_snapshot.SessionSnapshot,
     scan: session_log.LogScan,
     merged: resume_chain.MergedStart | None,
-    answerable: bool,
+    can_ask: bool,
     reporter: app_reporter.Reporter,
 ) -> TreeVerdict:
     """Tell the run's files from the operator's, before the resume has a live worker.
@@ -490,7 +491,7 @@ def classify(
         snapshot: The run's last snapshot.
         scan: The scan of the run's journal.
         merged: Where the run continues from when HEAD holds its merged work.
-        answerable: Whether a question would reach anyone.
+        can_ask: Whether the front-end can ask the operator.
         reporter: Receives the notes and a refusal.
 
     Returns:
@@ -534,7 +535,8 @@ def classify(
             end_tree=record.end_tree,
             seed=record.seed,
             run_branch=manifest.run_branch,
-            answerable=answerable,
+            # Read after the scan: the away mode an operator set while it ran counts.
+            answerable=can_ask or ipc.away_mode(layout.session_dir) == "wait",
         )
     except (errors.GitError, OSError) as exc:
         reporter.error(f"cannot tell the run's files from the operator's: {exc}")

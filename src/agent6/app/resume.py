@@ -1199,8 +1199,7 @@ def resume_task(
                 snapshot=snapshot,
                 scan=scan,
                 merged=merged,
-                answerable=frontend.capabilities.can_ask
-                or ipc.away_mode(layout.session_dir) == "wait",
+                can_ask=frontend.capabilities.can_ask,
                 reporter=reporter,
             )
             held.untracked_at_start = tree.untracked_at_start
