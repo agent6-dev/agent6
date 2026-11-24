@@ -395,6 +395,41 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
     assert order == ["isolation", "pid", "execution"]
 
 
+def test_retrying_a_refused_resume_queues_its_image_steer_once(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refused merge left the resume prompt queued beside the retry's copy."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
+    sid = "plan-RETRY"
+    _plan_session_dir(repo, sid)
+    _stub_load_effective(monkeypatch, _PLANNER_CONFIG, tmp_path)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _nothing)
+    monkeypatch.setattr(session_runtime, "select_isolation", _unconfined)
+    monkeypatch.setattr(execution, "run_execution", _finished_execution)
+    session_dir = paths.state_dir(repo) / "sessions" / "runs" / sid
+    image = test_operator_images.stored(session_dir)
+    message = operator_input.OperatorInput(parts=("match this", image), message_id="m2")
+
+    def resume(*, merge_from: str) -> int:
+        ipc.write_launch_input(session_dir, message, follow_up=True)
+        return cli_resume._cmd_resume(
+            (), sid, force=False, merge_from=merge_from, steer=message.text
+        )
+
+    assert resume(merge_from="feature") == 2  # A plan cannot merge a branch.
+    refused_queue = ipc.queued_steers(session_dir)
+    assert resume(merge_from="") == 0
+    assert ipc.queued_steers(session_dir) == (
+        ipc.QueuedSteer(text=message.text, images=(image,), message_id="m2"),
+    )
+    assert refused_queue == ()
+    assert not ipc.steer_request_pending(session_dir)
+
+
 def test_a_late_resume_refusal_does_not_record_unrun_preset_or_model_picks(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

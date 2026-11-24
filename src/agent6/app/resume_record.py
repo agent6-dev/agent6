@@ -338,25 +338,18 @@ def reset_bridge(
     target: ResumeTarget,
     scan: session_log.LogScan,
     *,
-    steer: str,
     started_at: float,
-    reporter: app_reporter.Reporter,
 ) -> resume_questions.CarriedQuestions:
-    """Drop the bridge state the last execution left, and seed this execution's steer.
+    """Drop the bridge state the last execution left.
 
     Args:
         target: The session.
         scan: The scan of the journal.
-        steer: The `--steer` text.
         started_at: The instant this execution began; the stale-state clear keeps bridge
             markers written since.
-        reporter: Receives the refusal.
 
     Returns:
         The questions the journal carries over.
-
-    Raises:
-        preflight.SessionRefusedError: The steer could not be written.
     """
     layout = target.layout
     carried = resume_questions.carried_questions(layout.logs_path)
@@ -367,6 +360,22 @@ def reset_bridge(
         keep_questions=[request.id for request in carried.pending],
         keep_steer=scan.stop_reason == "setup_command_failed",
     )
+    return carried
+
+
+def queue_resume_steer(
+    layout: sessions_layout.SessionLayout, steer: str, *, reporter: app_reporter.Reporter
+) -> None:
+    """Queue the operator's follow-up once the resume passes its preflight.
+
+    Args:
+        layout: The session's directory layout.
+        steer: The `--steer` text.
+        reporter: Receives the refusal.
+
+    Raises:
+        preflight.SessionRefusedError: The steer could not be written.
+    """
     # The steer as a front-end recorded it before it launched the resume: its images and its id.
     launch = ipc.take_launch_input(layout.session_dir, steer, follow_up=True)
     if steer.strip() and not ipc.submit_steer(
@@ -374,7 +383,6 @@ def reset_bridge(
     ):
         reporter.error("could not write the initial steer request")
         raise preflight.SessionRefusedError(2)
-    return carried
 
 
 def read_snapshot(

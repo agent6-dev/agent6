@@ -255,9 +255,7 @@ def resume_task(
                     effort=effort,
                     reporter=reporter,
                 )
-            carried = resume_record.reset_bridge(
-                target, scan, steer=steer, started_at=started_at, reporter=reporter
-            )
+            carried = resume_record.reset_bridge(target, scan, started_at=started_at)
             held.in_session = True
             held.repo_lock_fd = resume_setup.take_checkout(target, reporter=reporter)
             snapshot = resume_record.read_snapshot(target, reporter=reporter)
@@ -304,6 +302,7 @@ def resume_task(
             merged_in = resume_setup.merge_in(
                 target, base_sha, start.identity, merge_from=merge_from, reporter=reporter
             )
+            resume_record.queue_resume_steer(layout, steer, reporter=reporter)
             resume_setup.stamp_resume(
                 target,
                 start,
