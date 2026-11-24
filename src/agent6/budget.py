@@ -21,6 +21,7 @@ plan readings folded through the same high-water rule as the parent's own.
 from __future__ import annotations
 
 import dataclasses
+import decimal
 import hashlib
 import math
 import threading
@@ -61,7 +62,7 @@ class PlanWindow:
 
 
 # Purchased credits sell in 1,000-credit packs at $40.
-_CREDITS_PER_USD = 25.0
+_CREDITS_PER_USD = 25
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -145,16 +146,14 @@ class PlanUsage:
     def credits_usd(self) -> float | None:
         """The purchased-credit balance in dollars; a bare number is credits, converted."""
         raw = self.credits_balance.strip()
-        if not raw:
-            return None
         try:
-            if raw.startswith("$"):
-                amount = float(raw.lstrip("$").replace(",", ""))
-            else:
-                amount = float(raw.replace(",", "")) / _CREDITS_PER_USD
-        except ValueError:
+            balance = decimal.Decimal(raw.removeprefix("$").replace(",", ""))
+            if not balance.is_finite() or balance < 0:
+                return None
+            usd = float(balance if raw.startswith("$") else balance / _CREDITS_PER_USD)
+        except decimal.DecimalException:
             return None
-        return amount if math.isfinite(amount) and amount >= 0 else None
+        return usd if math.isfinite(usd) and (usd != 0 or balance == 0) else None
 
 
 @dataclasses.dataclass(slots=True)
