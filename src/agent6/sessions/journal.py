@@ -950,9 +950,10 @@ class ModelWebSearch(Event):
     query: str = pydantic.Field(
         description="The query the model sent; empty when the response names none."
     )
-    status: str | None = pydantic.Field(
-        default=None,
-        description="`completed`, or the provider's word for another outcome.",
+    status: str = pydantic.Field(
+        description=(
+            "`completed`, or the provider's word for another outcome; empty when unreported."
+        ),
     )
     urls: tuple[str, ...] = pydantic.Field(
         default=(),

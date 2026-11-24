@@ -634,8 +634,8 @@ class InstrumentedProvider:
                     **self._identity(call_context),
                     search_id=search.id,
                     query=search.query,
+                    status=search.status,
                     urls=search.urls,
-                    **({"status": search.status} if search.status else {}),
                 )
             )
 

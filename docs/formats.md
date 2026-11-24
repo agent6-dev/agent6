@@ -745,7 +745,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `reviewer_index` | `int, optional` | Zero-based reviewer index. |
 | `search_id` | `str` | The provider's identifier for the search. |
 | `query` | `str` | The query the model sent; empty when the response names none. |
-| `status` | `str, optional` | `completed`, or the provider's word for another outcome. |
+| `status` | `str` | `completed`, or the provider's word for another outcome; empty when unreported. |
 | `urls` | `list, optional` | The result URLs on Messages; on Responses, the URLs the response cites after the search. |
 
 ### nudge.loop_guard
