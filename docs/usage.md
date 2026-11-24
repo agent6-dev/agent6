@@ -549,6 +549,7 @@ The cold-start mode, summary writer, gists and history retention settings apply 
 **Resume with a cold cache.** A resume is cold if the provider or model differs from the last ordinary worker request in the journal.
 It is also cold if the time since that request began reaches the current provider's `idle_compact_s`.
 A helper call, summary or session stop does not reset that clock.
+For a process-backed provider, a successful attempt confirms the route and start time of its worker call.
 Set the limit to `-1` to disable the age rule but still detect a route change; `0` is not valid.
 The wait setting `idle_compact_min_chars` does not apply at resume.
 
@@ -559,10 +560,13 @@ The wait setting `idle_compact_min_chars` does not apply at resume.
   Only `elision_gists` can call the helper during the drop.
 - `resend`: keep the saved conversation for the usual size and manual compaction checks.
 - `summarize`: ask the helper for a summary and restart with it and the retained history.
+  The helper uses a pending `/compact` focus in that summary.
   An unusable summary leaves the history intact.
 - `truncate`: restart with the retained history and no summary call.
   The notice states what was left out and points to `read_session` when that tool is available.
 
+`drop` and `truncate` do not run a second compaction on the same request.
+The next ordinary check handles size and any pending `/compact`.
 The start line and `compact.cold_start` journal entry report the route change or the gap and limit, the action, and the net context characters the cold step did not send to the worker.
 This is not a token count or evidence that the endpoint evicted the cache.
 On an endpoint that writes signed summaries, the line reports that the local mode does not apply.
