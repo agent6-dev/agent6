@@ -56,6 +56,8 @@ echo "web workflow demo: starting agent6 web on :$WEB_PORT"
 # The server requires a secret; web_demo.py signs in with this one, fresh for every tour.
 AGENT6_WEB_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
 export AGENT6_WEB_SECRET
+# Tree-sitter grammars stay in the caller's cache home: an empty one downloads each at first use.
+export TREE_SITTER_LANGUAGE_PACK_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}"
 # Child clones live under the cache home. Only the server gets a throwaway one: Playwright
 # looks for its browser under the real one.
 ( cd "$AGENT6_DEMO_REPO" && XDG_CACHE_HOME="$TMP/cache" exec agent6 web --host 127.0.0.1 --port "$WEB_PORT" ) \

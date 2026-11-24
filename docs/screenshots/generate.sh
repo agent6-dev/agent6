@@ -28,6 +28,8 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 export XDG_CONFIG_HOME="$TMP/config"
 export XDG_STATE_HOME="$TMP/state"
+# Tree-sitter grammars stay in the caller's cache home: an empty one downloads each at first use.
+export TREE_SITTER_LANGUAGE_PACK_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}"
 # Model listings are cached under the cache home.
 export XDG_CACHE_HOME="$TMP/cache"
 # The tours run in a clone of this checkout: the Git and Files pages show its history, and

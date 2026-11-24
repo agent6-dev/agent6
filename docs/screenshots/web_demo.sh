@@ -58,6 +58,8 @@ tour() {
   python3 docs/screenshots/seed.py >/dev/null
 
   echo "web_demo: starting agent6 web on :$PORT"
+  # Tree-sitter grammars stay in the caller's cache home: an empty one downloads each at first use.
+  export TREE_SITTER_LANGUAGE_PACK_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}"
   # Model listings are cached under the cache home. Only the server gets a throwaway one:
   # Playwright looks for its browser under the real one.
   ( cd "$AGENT6_DEMO_REPO" && XDG_CACHE_HOME="$home/cache" exec agent6 web --host 127.0.0.1 --port "$PORT" ) \

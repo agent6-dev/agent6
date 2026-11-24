@@ -40,6 +40,8 @@ trap '( cd "$DEMO_REPO" && agent6 stop --all ) >/dev/null 2>&1 || true
   kill "${PROXY_PID:-0}" 2>/dev/null || true; rm -rf "$TMP" "$DEMO_REPO"' EXIT
 export XDG_CONFIG_HOME="$TMP/config"
 export XDG_STATE_HOME="$TMP/state"
+# Tree-sitter grammars stay in the caller's cache home: an empty one downloads each at first use.
+export TREE_SITTER_LANGUAGE_PACK_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}"
 # Worktrees and child clones live under the cache home.
 export XDG_CACHE_HOME="$TMP/cache"
 export AGENT6_DEMO_REPO="$DEMO_REPO"
