@@ -113,8 +113,6 @@ jobs:
           uv run --no-sync python - <<'PY'
           import tree_sitter_language_pack as pack
 
-          # tests/conftest.py uses the resolved library directory as its cache base.
-          pack.configure(pack.PackConfig(cache_dir=pack.cache_dir()))
           languages = "c cpp csharp go java javascript php python ruby rust typescript".split()
           pack.prefetch(languages)
           tree = pack.get_parser("python").parse(b"def f(): pass\n")
