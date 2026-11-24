@@ -94,6 +94,29 @@ jobs:
           assert 'site-packages' in agent6.__file__, agent6.__file__
           print('testing', agent6.__file__)"
 
+      - &cache-grammars
+        name: Cache tree-sitter grammars
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/tree-sitter-language-pack
+          key: tree-sitter-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('uv.lock') }}
+
+      - &prepare-grammars
+        name: Fetch and parse with the test grammars
+        run: |
+          uv run --no-sync python - <<'PY'
+          import tree_sitter_language_pack as pack
+
+          # tests/conftest.py uses the resolved library directory as its cache base.
+          pack.configure(pack.PackConfig(cache_dir=pack.cache_dir()))
+          languages = "c cpp csharp go java javascript php python ruby rust typescript".split()
+          pack.prefetch(languages)
+          tree = pack.get_parser("python").parse(b"def f(): pass\n")
+          assert not tree.root_node.has_error
+          missing = set(languages) - set(pack.downloaded_languages())
+          assert not missing, f"Grammars missing from {pack.cache_dir()}: {sorted(missing)}"
+          PY
+
       - run: uv run --no-sync pytest -ra --override-ini=pythonpath= -m "not browser"
 
   browser:
@@ -141,6 +164,9 @@ jobs:
           import agent6
           assert 'site-packages' in agent6.__file__, agent6.__file__
           print('testing', agent6.__file__)"
+
+      - *cache-grammars
+      - *prepare-grammars
 
       - run: uv run --no-sync pytest -ra --override-ini=pythonpath= -m browser
 
