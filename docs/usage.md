@@ -285,7 +285,7 @@ Older reserved messages appear in time order before the pins and summary, includ
 The opening task has no special place.
 
 `compaction.keep_recent_chars` caps the two together (default `80000`); `agent6 config show` gives the effective cap for the worker.
-The newest eligible turn stays whole even if it exceeds the cap.
+After reserving the operator's words, the newest eligible turn stays whole even if it exceeds the space left.
 At `0`, only work the worker has yet to read or finish survives beside the restart notice.
 `compaction.keep_thinking_turns` limits how many recent replies keep their thinking when a local drop rewrites tool results or a summary restarts the conversation.
 

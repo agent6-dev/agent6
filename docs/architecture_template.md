@@ -241,6 +241,7 @@ See [Anthropic Messages](anthropic.md) for the supported models and wire behavio
 - `retention.select` applies the same operator, turn and character caps to size, manual and idle restarts.
   The restart notice holds the pointers, older reserved operator messages, pins, rulings, verify fact, metric and summary in that order.
   Recent turns follow with calls and results paired, followed by any unread inputs.
+  A reviewer's opening is its contract, not operator text. Each local restart keeps it once and the next request supplies the current reply count.
   `keep_thinking_turns` limits replayed thinking by assistant turn.
 - An idle restart uses the driving provider's `idle_compact_s` and `idle_compact_min_chars`.
   The limit counts from the start of the last worker request, including time spent generating the reply.
@@ -872,6 +873,7 @@ A checkpoint whose `graph_version` is 0 or less has no version to rebuild at, so
 On a gated run, an edit not yet committed at the forked turn is absent from the fork's tree, even though the copied transcript mentions it.
 A fork is a commit plus the conversation up to that turn; no checkpoint holds uncommitted bytes.
 An `/undo` fork adds no worktree: it keeps the undone session's checkout.
+Each checkpoint records the number and text of the last steer delivered. `/undo` follows that delivery even when a restart omits the steer from the conversation.
 
 ## Machines
 
