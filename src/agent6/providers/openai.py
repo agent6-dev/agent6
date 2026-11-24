@@ -17,12 +17,12 @@ import dataclasses
 import json
 from collections.abc import Callable, Mapping
 from typing import Any
-from urllib import parse
 
 import httpx2
 
 from agent6 import budget as agent6_budget
 from agent6 import kinds
+from agent6.config import provider_config
 from agent6.providers import (
     openai_messages,
     openai_parse,
@@ -125,11 +125,6 @@ def _is_openai_direct_reasoning_model(model: str) -> bool:
     return any(
         lowered == p or lowered.startswith(p + "-") for p in _OPENAI_DIRECT_REASONING_PREFIXES
     )
-
-
-def is_openai_direct_host(base_url: str, deployment: str) -> bool:
-    """Return whether requests go to api.openai.com itself, whose parameters differ."""
-    return deployment == "direct" and parse.urlsplit(base_url).hostname == "api.openai.com"
 
 
 def sent_reasoning_effort(
@@ -301,7 +296,7 @@ class OpenAIProvider:
             extra_query=self.extra_query,
         )
         # Only api.openai.com's own reasoning models reject `max_tokens` and a temperature.
-        is_openai_direct = is_openai_direct_host(self.base_url, self.deployment)
+        is_openai_direct = provider_config.is_openai_direct(self.base_url, self.deployment)
         is_openai_direct_reasoning = is_openai_direct and _is_openai_direct_reasoning_model(
             self.model
         )

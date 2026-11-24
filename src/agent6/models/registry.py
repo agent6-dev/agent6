@@ -185,7 +185,7 @@ def model_effort(cfg: Config, rm: RoleModel | None) -> str | None:
             return openai.sent_reasoning_effort(
                 rm.model,
                 rm.effort,
-                direct_openai=openai.is_openai_direct_host(entry.base_url, entry.deployment),
+                direct_openai=entry.direct_vendor == "openai",
             )
 
 

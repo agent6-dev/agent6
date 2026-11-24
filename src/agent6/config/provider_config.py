@@ -427,6 +427,11 @@ class _ProviderBase(pydantic.BaseModel):
         return self
 
 
+def is_openai_direct(base_url: str, deployment: str) -> bool:
+    """Return whether requests go to api.openai.com itself, whose parameters differ."""
+    return deployment == "direct" and parse.urlsplit(base_url).hostname == "api.openai.com"
+
+
 class PricedProviderEntry(_ProviderBase):
     """An API whose listing or reference listing can price its calls."""
 
@@ -442,14 +447,10 @@ class PricedProviderEntry(_ProviderBase):
     @property
     def direct_vendor(self) -> str:
         """The vendor of a direct API endpoint, or an empty string for a gateway."""
-        if self.deployment != "direct":
-            return ""
+        if self.backend != "anthropic":
+            return "openai" if is_openai_direct(self.base_url, self.deployment) else ""
         host = parse.urlsplit(self.base_url).hostname
-        if self.backend == "anthropic" and host == "api.anthropic.com":
-            return "anthropic"
-        return (
-            "openai" if self.backend in ("openai", "responses") and host == "api.openai.com" else ""
-        )
+        return "anthropic" if self.deployment == "direct" and host == "api.anthropic.com" else ""
 
     @pydantic.model_validator(mode="after")
     def _default_price_source(self) -> PricedProviderEntry:

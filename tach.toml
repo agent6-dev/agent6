@@ -256,6 +256,7 @@ depends_on = [
   "agent6.child_env",  # the claude_code child's curated environment
   "agent6.config.header_config",  # the extra_headers grammar the adapters render
   "agent6.config.oauth_config",  # the configured issuer a stored grant is bound to
+  "agent6.config.provider_config",  # is_openai_direct: the one rule for OpenAI's own address
   "agent6.config.secret_store",
   "agent6.config.surface_config",  # is_loopback_host: no ambient proxy carries a loopback bearer off the host
   "agent6.kinds",
